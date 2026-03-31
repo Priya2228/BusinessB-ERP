@@ -1,0 +1,187 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invoice - {{ dispatch_docno|default:"Draft" }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @page { size: A4; margin: 10mm; }
+        body { font-family: 'Helvetica', sans-serif; color: black; font-size: 8pt; line-height: 1.2; }
+        .border-black { border: 1px solid black; }
+        .table-header { background-color: white; font-weight: bold; }
+        .cell-padding { padding: 4px; }
+        /* Ensures the description maintains formatting for Brand, Fabric, and Style */
+        .description-text { white-space: pre-line; font-size: 7pt; }
+        .terms-section {
+    border-top: 1.5pt solid black;
+    margin-top: 20px;
+    padding-top: 10px;
+    color: #000000; /* Force pure black */
+}
+
+.terms-header {
+    font-family: 'Helvetica', 'Arial', sans-serif;
+    font-weight: bold;
+    font-size: 10pt;
+    text-transform: uppercase;
+    text-decoration: underline;
+    margin-bottom: 12px;
+    color: #000000;
+}
+
+/* Container for the terms */
+.terms-body {
+    color: #000000;
+    font-size: 11px; /* Standard size for invoice terms */
+    line-height: 1.5;
+    text-align: left;
+}
+
+/* Target the Headings specifically */
+.terms-body b, 
+.terms-body strong {
+    display: block;      /* Makes the heading sit on its own line */
+    font-weight: 900;    /* Extra bold */
+    color: #000000;
+    text-transform: uppercase;
+    margin-top: 12px;    /* Space before a new section */
+    margin-bottom: 4px;  /* Space before bullet points */
+    font-size: 12px;     /* Slightly larger than body text */
+}
+
+/* Ensure bullet points are normal weight */
+.terms-body span, 
+.terms-body p {
+    font-weight: 400;
+    display: block;
+}
+    </style>
+</head>
+<body class="bg-white p-4">
+
+    <div class="flex justify-between items-start mb-6">
+        <div>
+            <div class="flex justify-center items-center mb-6">
+    <img 
+        src="{% static 'logo.png' %}" 
+        alt="BusinessB Intelligence" 
+        class="h-[80px] w-auto block max-w-full"
+    />
+</div>
+            <p class="mt-1">72C Thanneerpanthal Colony, Anupparpalayam P.O</p>
+            <p>Tiruppur, Tamil Nadu, India</p>
+            <p>9344001577, prakiya318@gmail.com</p>
+            <p class="font-bold">GSTIN: 33AACFV3825E2ZG</p>
+        </div>
+        <div class="border-black p-2 w-64">
+            <p><strong>Invoice No. :</strong> {{ dispatch_docno }}</p>
+            <p><strong>Invoice Date:</strong> {% now "d/m/Y" %}</p>
+            <p><strong>Vehicle No :</strong> TN39CK3715</p>
+            <p><strong>Transport :</strong> {{ dispatch_through|default:"Fashion World" }}</p>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-3 gap-0 mb-6 border-black">
+        <div class="border-r border-black p-2">
+            <p class="font-bold border-b border-black mb-1">Customer Name</p>
+            <p>{{ ledger|default:"Cash/Customer" }}</p>
+            <p class="mt-2 text-[7pt]">GSTIN: 33AACFV3825E2ZG</p>
+        </div>
+        <div class="border-r border-black p-2">
+            <p class="font-bold border-b border-black mb-1">Billing Address</p>
+            <p class="text-[7pt]">NO. 244/1, MUTHANAMPALAYAM ROAD<br>TIRUPUR, 641606<br>India</p>
+        </div>
+        <div class="p-2">
+            <p class="font-bold border-b border-black mb-1">Delivery Address</p>
+            <p class="text-[7pt]">NO. 244/1, AMMAN KOVIL STREET ROAD<br>NALLUR,<br>TIRUPUR</p>
+        </div>
+    </div>
+
+    <table class="w-full border-collapse border-black mb-4">
+        <thead>
+            <tr class="table-header border-b border-black text-center">
+                <th class="border-r border-black cell-padding w-8">SNo</th>
+                <th class="border-r border-black cell-padding w-16">Item Code</th>
+                <th class="border-r border-black cell-padding text-left">Item Name & Description</th>
+                <th class="border-r border-black cell-padding w-10">Qty</th>
+                <th class="border-r border-black cell-padding w-16">Rate</th>
+                <th class="border-r border-black cell-padding w-12">Disc%</th>
+                <th class="border-r border-black cell-padding w-24">Tax (CGST/SGST)</th>
+                <th class="cell-padding w-24 text-right">Amount</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for rec in records %}
+            <tr class="border-b border-black align-top">
+                <td class="border-r border-black cell-padding text-center">{{ forloop.counter }}</td>
+                <td class="border-r border-black cell-padding text-center">{{ rec.item_code }}</td>
+                <td class="border-r border-black cell-padding">
+                    <div class="font-bold">{{ rec.item_name }}</div>
+                    <div class="description-text">{{ rec.description|linebreaksbr }}</div>
+                </td>
+                <td class="border-r border-black cell-padding text-center">{{ rec.quantity|floatformat:0 }}</td>
+                <td class="border-r border-black cell-padding text-right">{{ rec.rate|floatformat:2 }}</td>
+                <td class="border-r border-black cell-padding text-center">{{ rec.discount_percent|default:"0" }}%</td>
+                <td class="border-r border-black cell-padding text-[7pt] leading-tight">
+                    CGST: {{ rec.tax_split|floatformat:2 }}<br>
+                    SGST: {{ rec.tax_split|floatformat:2 }}
+                </td>
+                <td class="cell-padding text-right font-semibold">{{ rec.amount|floatformat:2 }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="8" class="text-center p-10 italic text-gray-500">No items found for this dispatch ID.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="flex justify-between items-start mb-8">
+        <div class="border-black p-2 w-[55%] h-24">
+            <p class="font-bold underline mb-1">Bank Details:</p>
+            <p>A/C No: 4402 0087 0004 4467</p>
+            <p>IFSC: PUNB0440200</p>
+            <p>Bank: PUNJAB NATIONAL BANK</p>
+        </div>
+        <div class="border-black p-2 w-[40%] text-right leading-relaxed">
+            <div class="flex justify-between">
+                <span>Taxable Amount:</span>
+                <span>{{ taxable_total|floatformat:2 }}</span>
+            </div>
+            <div class="flex justify-between font-bold text-[10pt] border-t border-black mt-2 pt-1">
+                <span>Net Amount:</span>
+                <span>Rs. {{ net_total|floatformat:2 }}</span>
+            </div>
+        </div>
+    </div>
+
+<div class="terms-section mt-4 border-t border-black pt-2">
+    <h2 class="text-black font-bold uppercase text-sm mb-2">
+        Terms and Conditions {% if terms_type %}- {{ terms_type }}{% endif %}
+    </h2>
+    
+    <div id="dynamic-terms-content" class="terms-body text-black text-xs leading-normal whitespace-pre-line text-left">
+        {% if terms_conditions %}
+            {# The |safe filter is used here IF your database content contains <b> tags #}
+            {{ terms_conditions|linebreaksbr }}
+        {% else %}
+            Standard Terms & Conditions apply for Fashion World.
+            All disputes are subject to Tiruppur Jurisdiction.
+        {% endif %}
+    </div>
+</div>
+
+    <div class="mt-auto">
+        <p class="text-right font-bold text-[9pt] mb-16">For Priya Industries</p>
+        <div class="flex justify-between font-bold text-[8pt] text-center">
+            <p class="border-t border-black pt-1 w-32">Receiver Signature</p>
+            <p class="border-t border-black pt-1 w-32">Checked By</p>
+            <p class="border-t border-black pt-1 w-32">Prepared By</p>
+            <p class="border-t border-black pt-1 w-32">Authorised Signature</p>
+        </div>
+    </div>
+
+</body>
+</html>
