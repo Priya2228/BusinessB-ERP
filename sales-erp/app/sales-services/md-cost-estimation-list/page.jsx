@@ -222,7 +222,7 @@ export default function MdCostEstimationListPage() {
                           {isMdApproved ? (
                             <button
                               type="button"
-                              onClick={() => router.push("/sales-services/rfq")}
+                              onClick={() => router.push(`/sales-services/quotation?estimationId=${row.id}`)}
                               className={quotationButtonClassName}
                               title="Open quotation"
                             >

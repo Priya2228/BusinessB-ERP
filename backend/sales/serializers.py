@@ -4,6 +4,8 @@ from inventory.services import get_tax_details, get_tax_rate, normalize_region
 from .models import (
     InvoiceItem,
     Dispatchdetails,
+    Quotation,
+    QuotationItem,
     Item,
     SalesServiceRequest,
     CostEstimation,
@@ -88,6 +90,75 @@ class DispatchdetailsSerializer(serializers.ModelSerializer):
             InvoiceItem.objects.create(dispatch=dispatch, **item_data)
             
         return dispatch
+
+
+class QuotationItemSerializer(serializers.ModelSerializer):
+    region = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    item_category = serializers.CharField(write_only=True, required=False, allow_blank=True)
+
+    class Meta:
+        model = QuotationItem
+        fields = "__all__"
+
+    def validate(self, attrs):
+        return apply_tax_rule(attrs)
+
+
+class QuotationSerializer(serializers.ModelSerializer):
+    items = QuotationItemSerializer(many=True, required=False)
+    region = serializers.CharField(write_only=True, required=False, allow_blank=True)
+
+    class Meta:
+        model = Quotation
+        fields = "__all__"
+
+    def create(self, validated_data):
+        items_data = validated_data.pop("items", [])
+        region = validated_data.pop("region", "")
+        customer_name = validated_data.get("customer_name")
+
+        if customer_name:
+            last_revision = (
+                Quotation.objects.filter(customer_name=customer_name)
+                .order_by("-revise_count", "-id")
+                .values_list("revise_count", flat=True)
+                .first()
+            )
+            validated_data["revise_count"] = int(last_revision or 0) + 1
+
+        quotation = Quotation.objects.create(**validated_data)
+
+        for item_data in items_data:
+            item_data.pop("quotation", None)
+            if region and not item_data.get("region"):
+                item_data["region"] = region
+            item_data = apply_tax_rule(item_data)
+            QuotationItem.objects.create(quotation=quotation, **item_data)
+
+        return quotation
+
+    def update(self, instance, validated_data):
+        items_data = validated_data.pop("items", None)
+        region = validated_data.pop("region", "")
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+
+        if items_data is not None:
+            instance.revise_count = (instance.revise_count or 0) + 1
+            instance.save()
+            instance.items.all().delete()
+
+            for item_data in items_data:
+                item_data.pop("quotation", None)
+                if region and not item_data.get("region"):
+                    item_data["region"] = region
+                item_data = apply_tax_rule(item_data)
+                QuotationItem.objects.create(quotation=instance, **item_data)
+        else:
+            instance.save()
+
+        return instance
 
 class ItemSerializer(serializers.ModelSerializer):
     item_image = serializers.ImageField(required=False, allow_null=True)

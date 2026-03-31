@@ -2,12 +2,13 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { BriefcaseBusiness, Calculator, FileSpreadsheet, UserCheck, X } from "lucide-react";
+import { BriefcaseBusiness, Calculator, FileSpreadsheet, ReceiptText, UserCheck, X } from "lucide-react";
 import AppPageShell from "../components/AppPageShell";
 
 const quickLinks = [
   { title: "RFQ", icon: FileSpreadsheet, href: "/sales-services/rfq" },
   { title: "Cost Sheet", icon: Calculator, href: "/sales-services/cost-sheet" },
+  { title: "Quotation", icon: ReceiptText, href: "/sales-services/quotation" },
   { title: "Dept Head Cost Estimation List", icon: UserCheck, href: "/sales-services/dept-head-cost-estimation-list" },
   { title: "MD Cost Estimation List", icon: BriefcaseBusiness, href: "/sales-services/md-cost-estimation-list" },
 ];

@@ -8,6 +8,10 @@ urlpatterns = [
 
     # 2. This is for specific invoice updates/deletes
     path('dispatch-details/<int:pk>/', dispatch_detail_update_delete),
+    path('quotations/', quotation_list_create),
+    path('quotations/<int:pk>/', quotation_detail_update_delete),
+    path('quotation-terms/', quotation_terms_list),
+    path('view_quotation/<int:quotation_id>/', view_quotation, name='view_quotation'),
 
     # 3. Item-level paths
     path('invoice-items/', invoice_items),

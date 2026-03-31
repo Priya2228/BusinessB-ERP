@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title></title>
+    <style>
+        @page { size: A4; margin: 12mm; }
+        body { font-family: Arial, sans-serif; color: #111; margin: 0; background: #f5f5f5; }
+        .page { width: 794px; min-height: 1123px; margin: 0 auto 24px; background: #fff; padding: 36px 42px; box-sizing: border-box; }
+        .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+        .title { font-size: 20px; font-weight: 800; letter-spacing: 1px; }
+        .logo { width: 120px; height: auto; object-fit: contain; }
+        .box { border: 1px solid #cfcfcf; margin-bottom: 14px; }
+        .grid-two { display: grid; grid-template-columns: 1fr 1fr; }
+        .cell { padding: 12px; border-right: 1px solid #cfcfcf; min-height: 110px; }
+        .cell:last-child { border-right: 0; }
+        .section-title { padding: 6px 10px; font-size: 11px; font-weight: 700; background: #fafafa; border: 1px solid #cfcfcf; margin-bottom: 0; text-transform: uppercase; }
+        .details-table { width: 100%; border-collapse: collapse; }
+        .details-table td { border: 1px solid #cfcfcf; padding: 10px 14px; font-size: 11px; vertical-align: top; }
+        .details-label { width: 110px; font-weight: 700; white-space: nowrap; }
+        .details-value { font-weight: 600; }
+        .scope-table { width: 100%; border-collapse: collapse; }
+        .scope-table th, .scope-table td { border: 1px solid #cfcfcf; padding: 8px 10px; font-size: 11px; vertical-align: top; }
+        .scope-table th { text-align: left; background: #fafafa; }
+        .right { text-align: right; }
+        .terms-list { margin: 0; padding: 12px 24px 18px 28px; font-size: 11px; line-height: 1.5; }
+        .footer { margin-top: 28px; font-size: 11px; }
+        .print-bar { position: sticky; top: 0; display: flex; justify-content: flex-end; padding: 16px; background: rgba(245,245,245,0.96); }
+        .print-button { border: 0; background: #111827; color: #fff; padding: 10px 18px; border-radius: 8px; font-weight: 700; cursor: pointer; }
+        .bullet-list { margin: 0; padding: 10px 24px 14px 28px; font-size: 11px; line-height: 1.6; }
+        .bullet-list li { margin-bottom: 4px; }
+        .text-lines { padding: 10px; font-size: 11px; line-height: 1.6; }
+        .text-lines div { margin-bottom: 4px; }
+        .keep-together { page-break-inside: avoid; break-inside: avoid; }
+        @media print {
+            body { background: #fff; }
+            .print-bar { display: none; }
+            .page { margin: 0; width: auto; min-height: auto; padding: 0; }
+        }
+    </style>
+</head>
+<body>
+    <div class="print-bar">
+        <button class="print-button" onclick="const originalTitle=document.title; document.title=''; window.print(); setTimeout(() => { document.title = originalTitle; }, 100);">Print</button>
+    </div>
+
+    <div class="page">
+        <div class="header">
+            <div class="title">QUOTATION</div>
+            <img src="{{ logo_url }}" alt="Company Logo" class="logo">
+        </div>
+
+        <div class="box grid-two">
+            <div class="cell">
+                <div style="font-size:11px; font-weight:700; margin-bottom:10px;">FROM:</div>
+                <div style="font-size:12px; font-weight:800; margin-bottom:8px;">{{ sender_name }}</div>
+                {% for line in sender_address_lines %}
+                    <div style="font-size:11px; margin-bottom:4px;">{{ line }}</div>
+                {% endfor %}
+            </div>
+            <div class="cell">
+                <div style="font-size:11px; font-weight:700; margin-bottom:10px;">TO:</div>
+                <div style="display:grid; grid-template-columns: 110px 1fr; gap:4px 8px; font-size:11px;">
+                    <div style="font-weight:700;">CLIENT NAME:</div><div>{{ quotation.company_name|default:quotation.customer_name|default:"-" }}</div>
+                    <div style="font-weight:700;">ATTENTION TO:</div><div>{{ quotation.attention_name|default:"-" }}</div>
+                    <div style="font-weight:700;">EMAIL ID:</div><div>{{ client_email }}</div>
+                    <div style="font-weight:700;">PHONE NO:</div><div>{{ client_phone }}</div>
+                    <div style="font-weight:700;">ADDRESS:</div><div>{{ client_location }}</div>
+                </div>
+            </div>
+        </div>
+
+        <div style="margin-bottom: 14px;">
+            <div class="section-title">Quote Details</div>
+            <table class="details-table">
+                <tbody>
+                    <tr>
+                        <td class="details-label">Quote No:</td>
+                        <td class="details-value">{{ quotation.quotation_code|default:"-" }}</td>
+                        <td class="details-label">Quote Date:</td>
+                        <td class="details-value">{{ quotation.quotation_date|date:"d-m-Y" }}</td>
+                    </tr>
+                    <tr>
+                        <td class="details-label">Rev No:</td>
+                        <td class="details-value">{{ quotation.revise_count|default:"0" }}</td>
+                        <td class="details-label">RFQ Ref No:</td>
+                        <td class="details-value">{{ quotation.rfq_no|default:"-" }}</td>
+                    </tr>
+                    <tr>
+                        <td class="details-label">Quote Validity:</td>
+                        <td class="details-value">{{ quotation.quote_validity|default:"-" }}</td>
+                        <td class="details-label">RFQ Date:</td>
+                        <td class="details-value">{{ quotation.rfq_date|date:"d-m-Y"|default:"-" }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 14px;">
+            <div class="section-title">Scope</div>
+            <table class="scope-table">
+                <thead>
+                    <tr>
+                        <th style="width:50px;">S. No.</th>
+                        <th>Service Name</th>
+                        <th>Service Detail / Description</th>
+                        <th style="width:140px;" class="right">Lump Sum Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>1</td>
+                        <td>{{ quotation.scope_name|default:"-" }}</td>
+                        <td>{{ quotation.scope_specification|default:"-" }}</td>
+                        <td class="right">{{ quotation.currency_symbol|default:"Rs." }} {{ formatted_total_amount }}</td>
+                    </tr>
+                    <tr>
+                        <td colspan="3" class="right" style="font-weight:700;">TOTAL</td>
+                        <td style="font-weight:700;" class="right">{{ quotation.currency_symbol|default:"Rs." }} {{ formatted_total_amount }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px; font-size:11px; margin: 8px 0 14px;">
+            <strong>Total Amount ({{ quotation.currency_symbol|default:"Rs." }})</strong>
+            <div style="min-width:140px; border:1px solid #cfcfcf; padding:8px 10px; text-align:right; font-weight:700;">
+                {{ formatted_total_amount }}
+            </div>
+        </div>
+
+        <div style="font-size:11px; margin: 8px 0 14px;">
+            <strong>Total Amount in Words:</strong> {{ amount_in_words }} Only
+        </div>
+
+        <div class="box keep-together">
+            <div class="section-title">Commercial Terms</div>
+            <div style="padding:10px 10px 0; font-size:11px; line-height:1.6;">
+                <div>Quote Validity: {{ quotation.quote_validity|default:"-" }}</div>
+                <div>Quote Currency: {{ quotation.currency_symbol|default:"Rs." }}</div>
+            </div>
+            <div class="section-title" style="border-top:1px solid #cfcfcf;">Payment Terms</div>
+            <ol class="bullet-list">
+                {% for line in payment_lines %}
+                    <li>{{ line }}</li>
+                {% empty %}
+                    <li>No payment terms available.</li>
+                {% endfor %}
+            </ol>
+        </div>
+
+        <div class="box keep-together">
+           
+            <div class="section-title" style="border-top:0;">Delivery Terms</div>
+            <div class="text-lines">
+                {% for line in delivery_lines %}
+                    <div>{{ line }}</div>
+                {% empty %}
+                    <div>No delivery terms available.</div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="box keep-together">
+            <div class="section-title">Terms & Conditions</div>
+            <ol class="terms-list">
+                {% for line in terms_lines %}
+                    <li>{{ line }}</li>
+                {% empty %}
+                    <li>{{ quotation.general_terms|default:"No terms available." }}</li>
+                {% endfor %}
+            </ol>
+        </div>
+
+        <div class="footer">
+            <div style="margin-bottom:18px;">Hope the submitted offer is in line with your requirements. Looking forward to receiving your positive feedback.</div>
+            <div style="margin-bottom:18px;">Regards</div>
+            <div style="font-weight:700;">Authorized Signatory</div>
+            <div style="font-weight:700; margin-top:4px;">{{ sender_name }}</div>
+            <div style="display:flex; justify-content:flex-end; margin-top:32px;">
+                <img src="{{ logo_url }}" alt="Company Seal" style="width:90px; height:auto; opacity:0.9;">
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -8,6 +8,7 @@ from django.utils import timezone
 from .models import (
     Dispatchdetails,
     InvoiceItem,
+    Quotation,
     Item,
     SalesServiceRequest,
     CostEstimation,
@@ -23,6 +24,7 @@ from .models import (
 from .serializers import (
     DispatchdetailsSerializer,
     InvoiceItemSerializer,
+    QuotationSerializer,
     ItemSerializer,
     SalesServiceRequestSerializer,
     CostEstimationSerializer,
@@ -52,6 +54,63 @@ ITEM_BOOLEAN_FIELDS = [
     'need_service',
     'need_warranty',
     'need_serial_no',
+]
+
+QUOTATION_TERMS_OPTIONS = [
+    {
+        "termsCategory": "payment",
+        "termsName": "Advance Payment",
+        "termsContent": (
+            "Advance payment terms apply as per approved quotation.\n"
+            "Balance payment shall be cleared before final dispatch unless otherwise agreed.\n"
+            "Taxes, duties, and statutory levies are payable extra wherever applicable."
+        ),
+    },
+    {
+        "termsCategory": "payment",
+        "termsName": "Milestone Payment",
+        "termsContent": (
+            "1. Payment shall be released stage by stage as agreed in the commercial discussion.\n"
+            "2. Any delay in milestone approval may impact production continuation and delivery timelines.\n"
+            "3. Final invoice settlement is mandatory before handover."
+        ),
+    },
+    {
+        "termsCategory": "delivery",
+        "termsName": "Standard Delivery",
+        "termsContent": (
+            "1. Delivery schedule starts only after approval and receipt of the confirmed advance.\n"
+            "2. Any delay caused by customer-side approval, artwork, or material change will revise the delivery commitment.\n"
+            "3. Freight, loading, unloading, and insurance will be handled as per mutually agreed delivery mode."
+        ),
+    },
+    {
+        "termsCategory": "delivery",
+        "termsName": "Dispatch Conditions",
+        "termsContent": (
+            "1. Dispatch will be planned only after production clearance and packing confirmation.\n"
+            "2. Part delivery, split shipment, or urgent dispatch will be subject to logistics feasibility.\n"
+            "3. Transit delays beyond our control shall not be treated as supply default."
+        ),
+    },
+    {
+        "termsCategory": "general",
+        "termsName": "Commercial General",
+        "termsContent": (
+            "1. This quotation is subject to final technical confirmation and management approval.\n"
+            "2. Any change in quantity, specification, or scope will require price and lead-time revision.\n"
+            "3. Once approved, cancellation charges may apply for work already executed or materials already procured."
+        ),
+    },
+    {
+        "termsCategory": "general",
+        "termsName": "Technical General",
+        "termsContent": (
+            "Final execution will be based on approved sample, artwork, and technical sign-off.\n"
+            "Any variation in fabric, trim, branding, or workmanship expectation may alter cost and lead time.\n"
+            "Measurements and tolerances shall be considered as per the approved technical sheet."
+        ),
+    },
 ]
 
 @api_view(['GET', 'POST', 'PUT', 'DELETE'])
@@ -173,6 +232,128 @@ def dispatch_detail_update_delete(request, pk):
     elif request.method == 'DELETE':
         invoice.delete()
         return JsonResponse({"message": "Deleted successfully"}, status=204)
+
+
+@api_view(['GET', 'POST'])
+def quotation_list_create(request):
+    if request.method == 'GET':
+        quotations = Quotation.objects.all().prefetch_related('items')
+        serializer = QuotationSerializer(quotations, many=True)
+        return Response(serializer.data)
+
+    serializer = QuotationSerializer(data=request.data)
+    if serializer.is_valid():
+        quotation = serializer.save()
+        return Response(QuotationSerializer(quotation).data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET', 'PUT', 'DELETE'])
+def quotation_detail_update_delete(request, pk):
+    quotation = get_object_or_404(Quotation.objects.prefetch_related('items'), pk=pk)
+
+    if request.method == 'GET':
+        return Response(QuotationSerializer(quotation).data)
+
+    if request.method == 'PUT':
+        serializer = QuotationSerializer(quotation, data=request.data)
+        if serializer.is_valid():
+            quotation = serializer.save()
+            return Response(QuotationSerializer(quotation).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    quotation.delete()
+    return Response({'message': 'Deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['GET'])
+def quotation_terms_list(request):
+    return Response(QUOTATION_TERMS_OPTIONS)
+
+
+def _number_to_words(number):
+    units = [
+        "Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
+        "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen",
+        "Seventeen", "Eighteen", "Nineteen",
+    ]
+    tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"]
+
+    def below_thousand(value):
+        parts = []
+        if value >= 100:
+            parts.append(f"{units[value // 100]} Hundred")
+            value %= 100
+        if value >= 20:
+            parts.append(tens[value // 10])
+            if value % 10:
+                parts.append(units[value % 10])
+        elif value > 0:
+            parts.append(units[value])
+        return " ".join(parts).strip()
+
+    value = int(round(float(number or 0)))
+    if value == 0:
+        return "Zero"
+
+    chunks = [
+        (10000000, "Crore"),
+        (100000, "Lakh"),
+        (1000, "Thousand"),
+        (1, ""),
+    ]
+
+    words = []
+    remaining = value
+    for divisor, label in chunks:
+        chunk_value = remaining // divisor
+        if chunk_value:
+            words.append(below_thousand(chunk_value))
+            if label:
+                words.append(label)
+            remaining %= divisor
+
+    return " ".join(words).strip()
+
+
+def view_quotation(request, quotation_id):
+    quotation = get_object_or_404(Quotation, id=quotation_id)
+    sales_service = SalesServiceRequest.objects.filter(rfq_no=quotation.rfq_no).first()
+    host_name = request.get_host().split(":")[0]
+    logo_url = f"{request.scheme}://{host_name}:3000/logo.png"
+    decimal_places = int(getattr(quotation, "decimal_places", 2) or 2)
+    terms_lines = []
+    for block in [quotation.payment_terms, quotation.delivery_terms, quotation.general_terms]:
+        for line in str(block or "").splitlines():
+            if line.strip():
+                terms_lines.append(line.strip())
+
+    payment_lines = [line.strip() for line in str(quotation.payment_terms or "").splitlines() if line.strip()]
+    delivery_lines = [line.strip() for line in str(quotation.delivery_terms or "").splitlines() if line.strip()]
+
+    context = {
+        "quotation": quotation,
+        "logo_url": logo_url,
+        "decimal_places": decimal_places,
+        "formatted_total_amount": f"{float(quotation.total_net_amount or quotation.net_amount or 0):.{decimal_places}f}",
+        "sender_name": "PRIYA FASHIONS",
+        "sender_address_lines": [
+            "72 north car street ext,",
+            "Thoothukudi-628002",
+            "Email: test@gmail.com",
+            "TRN: 34354345",
+            "TEL NO.: 324324324324",
+        ],
+        "client_location": getattr(sales_service, "client_location", "") or "-",
+        "client_email": quotation.email or getattr(sales_service, "email", "") or "demo@gmail.com",
+        "client_phone": quotation.phone_no or getattr(sales_service, "phone_no", "") or "9856321478",
+        "payment_lines": payment_lines,
+        "delivery_lines": delivery_lines,
+        "terms_lines": terms_lines,
+        "amount_in_words": _number_to_words(quotation.total_net_amount or quotation.net_amount or 0),
+    }
+    return render(request, "quotation_print.html", context)
+
 def view_invoice(request, dispatch_id):
     # Fetch the header
     dispatch = get_object_or_404(Dispatchdetails, id=dispatch_id)

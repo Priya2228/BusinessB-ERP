@@ -53,6 +53,80 @@ class InvoiceItem(models.Model):
 
     def __str__(self):
         return f"{self.item_name} ({self.item_code})"
+
+
+class Quotation(models.Model):
+    customer_name = models.CharField(max_length=150)
+    quotation_code = models.CharField(max_length=50, unique=True)
+    quotation_date = models.DateField()
+    expiry_date = models.DateField(blank=True, null=True)
+    quote_validity = models.CharField(max_length=20, blank=True, null=True)
+    rfq_no = models.CharField(max_length=50, blank=True, null=True)
+    rfq_date = models.DateField(blank=True, null=True)
+    attention_name = models.CharField(max_length=150, blank=True, null=True)
+    company_name = models.CharField(max_length=150, blank=True, null=True)
+    email = models.EmailField(blank=True, null=True)
+    phone_no = models.CharField(max_length=20, blank=True, null=True)
+    scope_no = models.CharField(max_length=50, blank=True, null=True)
+    scope_name = models.CharField(max_length=255, blank=True, null=True)
+    scope_specification = models.TextField(blank=True, null=True)
+    scope_remarks = models.TextField(blank=True, null=True)
+    payment_terms = models.TextField(blank=True, null=True)
+    delivery_terms = models.TextField(blank=True, null=True)
+    general_terms = models.TextField(blank=True, null=True)
+    total_net_amount = models.FloatField(default=0)
+    remarks = models.TextField(blank=True, null=True)
+    terms_type = models.CharField(max_length=100, blank=True, null=True)
+    terms_conditions = models.TextField(blank=True, null=True)
+    currency_country = models.CharField(max_length=50, default="India")
+    currency_symbol = models.CharField(max_length=20, default="Rs.")
+    conversion_rate = models.FloatField(default=1)
+    tax_rate = models.FloatField(default=0)
+    decimal_places = models.PositiveIntegerField(default=2)
+    taxable_amount = models.FloatField(default=0)
+    tax_amount = models.FloatField(default=0)
+    discount_amount = models.FloatField(default=0)
+    subtotal = models.FloatField(default=0)
+    round_off = models.FloatField(default=0)
+    net_amount = models.FloatField(default=0)
+    revise_count = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name_plural = "Quotations"
+
+    def __str__(self):
+        return f"{self.quotation_code} - {self.customer_name}"
+
+
+class QuotationItem(models.Model):
+    quotation = models.ForeignKey(
+        Quotation,
+        related_name="items",
+        on_delete=models.CASCADE,
+    )
+    item_code = models.CharField(max_length=50, blank=True, null=True)
+    item_name = models.CharField(max_length=150)
+    item_category = models.CharField(max_length=100, blank=True, null=True)
+    unit = models.CharField(max_length=50, blank=True, null=True)
+    quantity = models.FloatField(default=0)
+    rate = models.FloatField(default=0)
+    discount_percent = models.FloatField(default=0)
+    tax_amount = models.FloatField(default=0)
+    amount = models.FloatField(default=0)
+    description = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["id"]
+        verbose_name_plural = "Quotation Items"
+
+    def __str__(self):
+        return f"{self.item_name} ({self.quotation_id})"
+
+
 class Item(models.Model):
     # Basic Information
     item_code = models.CharField(max_length=50, unique=True)

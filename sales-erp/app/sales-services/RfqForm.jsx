@@ -483,7 +483,7 @@ export default function RfqForm() {
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               <FormField label="Attention" name="clientName" value={formData.clientName} onChange={handleChange} error={errors.clientName} />
               <FormField label="Company Name" name="companyName" value={formData.companyName} onChange={handleChange} error={errors.companyName} />
-              <FormField label="Client Location" name="clientLocation" value={formData.clientLocation} onChange={handleChange} error={errors.clientLocation} />
+              <FormField label="Client Address" name="clientLocation" value={formData.clientLocation} onChange={handleChange} error={errors.clientLocation} />
             </div>
           </SectionCard>
 
