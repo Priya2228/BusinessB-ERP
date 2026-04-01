@@ -109,12 +109,22 @@
                     </tr>
                 </thead>
                 <tbody>
+                    {% for row in scope_rows %}
                     <tr>
-                        <td>1</td>
-                        <td>{{ quotation.scope_name|default:"-" }}</td>
-                        <td>{{ quotation.scope_specification|default:"-" }}</td>
-                        <td class="right">{{ quotation.currency_symbol|default:"Rs." }} {{ formatted_total_amount }}</td>
+                        <td>{{ forloop.counter }}</td>
+                        <td>{{ row.name|default:"-" }}</td>
+                        <td>
+                            {{ row.specification|default:"-" }}
+                        </td>
+                        <td class="right">
+                            {% if single_scope_row %}
+                                {{ quotation.currency_symbol|default:"Rs." }} {{ formatted_total_amount }}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
                     </tr>
+                    {% endfor %}
                     <tr>
                         <td colspan="3" class="right" style="font-weight:700;">TOTAL</td>
                         <td style="font-weight:700;" class="right">{{ quotation.currency_symbol|default:"Rs." }} {{ formatted_total_amount }}</td>
@@ -165,7 +175,7 @@
         <div class="box keep-together">
             <div class="section-title">Terms & Conditions</div>
             <ol class="terms-list">
-                {% for line in terms_lines %}
+                {% for line in general_lines %}
                     <li>{{ line }}</li>
                 {% empty %}
                     <li>{{ quotation.general_terms|default:"No terms available." }}</li>

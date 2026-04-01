@@ -284,6 +284,8 @@ export default function ClothSalesCostSheetPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const editId = searchParams.get("editId");
+  const revisionMode = searchParams.get("revisionMode");
+  const isPricingRevisionMode = revisionMode === "pricing";
   const [formData, setFormData] = useState(createInitialForm);
   const [rfqOptions, setRfqOptions] = useState([]);
   const [sectionOptionCatalog, setSectionOptionCatalog] = useState({});
@@ -303,16 +305,17 @@ export default function ClothSalesCostSheetPage() {
     const loadRealtimeData = async () => {
       try {
         setIsPageLoading(Boolean(editId));
-        const requests = [
-          fetch(buildApiUrl("/api/sales-services/")),
-          fetch(buildApiUrl("/api/cost-estimation-options/")),
-        ];
+        const rfqPromise = fetch(buildApiUrl("/api/sales-services/"));
+        const sectionOptionPromise = fetch(buildApiUrl("/api/cost-estimation-options/"));
+        const estimationPromise = editId
+          ? fetch(buildApiUrl(`/api/cost-estimations/${editId}/`))
+          : Promise.resolve(null);
 
-        if (editId) {
-          requests.push(fetch(buildApiUrl(`/api/cost-estimations/${editId}/`)));
-        }
-
-        const [rfqResponse, sectionOptionResponse, estimationResponse] = await Promise.all(requests);
+        const [rfqResponse, sectionOptionResponse, estimationResponse] = await Promise.all([
+          rfqPromise,
+          sectionOptionPromise,
+          estimationPromise,
+        ]);
 
         if (rfqResponse.ok) {
           const rfqData = await rfqResponse.json();
@@ -340,6 +343,7 @@ export default function ClothSalesCostSheetPage() {
           setSections(normalizeSectionRows(estimationData.sections));
           setSectionDrafts(createInitialDrafts());
         }
+
       } catch {
         setRfqOptions([]);
         setSectionOptionCatalog({});
@@ -580,7 +584,7 @@ export default function ClothSalesCostSheetPage() {
       showToast(editId ? "Cost estimation updated successfully." : "Cost estimation saved successfully.", "success");
       if (editId) {
         window.setTimeout(() => router.push("/sales-services/cost-sheet/list"), 600);
-      } else {
+      } else if (!editId) {
         handleReset();
       }
     } catch {

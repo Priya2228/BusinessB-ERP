@@ -128,12 +128,13 @@ export default function CostEstimationListPage() {
                       <table className="min-w-[1240px] w-full border-collapse text-left text-[11px] text-slate-700">
                         <thead className="bg-[#f5f9ff] text-slate-600">
                           <tr>
-                            <th className="border-b border-slate-200 px-4 py-3 font-semibold">Company</th>
-                            <th className="border-b border-slate-200 px-4 py-3 font-semibold">Client details</th>
-                            <th className="border-b border-slate-200 px-4 py-3 font-semibold">Reference details</th>
-                            <th className="border-b border-slate-200 px-4 py-3 font-semibold">Item details</th>
-                            <th className="border-b border-slate-200 px-4 py-3 font-semibold">Payment details</th>
-                            <th className="border-b border-slate-200 px-4 py-3 font-semibold">Delivery details</th>
+                            <th className="border-b border-slate-200 px-4 py-3 font-semibold">CST No</th>
+                            <th className="border-b border-slate-200 px-4 py-3 font-semibold">RFQ No</th>
+                            <th className="border-b border-slate-200 px-4 py-3 font-semibold">Client Name (Attention)</th>
+                            <th className="border-b border-slate-200 px-4 py-3 font-semibold">Company Name</th>
+                            <th className="border-b border-slate-200 px-4 py-3 font-semibold">Phone No</th>
+                            <th className="border-b border-slate-200 px-4 py-3 font-semibold">Email</th>
+                            <th className="border-b border-slate-200 px-4 py-3 font-semibold">Created At</th>
                             <th className="border-b border-slate-200 px-4 py-3 font-semibold">Status</th>
                             <th className="border-b border-slate-200 px-4 py-3 font-semibold">Actions</th>
                           </tr>
@@ -148,32 +149,16 @@ export default function CostEstimationListPage() {
 
                                 return (
                                   <>
-                              <td className="border-b border-slate-100 px-4 py-3">
-                                <p className="font-semibold text-slate-900">{row.company_name || "-"}</p>
+                              <td className="border-b border-slate-100 px-4 py-3 font-semibold text-slate-900">
+                                {row.estimation_no || "-"}
                               </td>
+                              <td className="border-b border-slate-100 px-4 py-3">{row.rfq_no || "-"}</td>
+                              <td className="border-b border-slate-100 px-4 py-3">{row.client_name || "-"}</td>
+                              <td className="border-b border-slate-100 px-4 py-3">{row.company_name || "-"}</td>
+                              <td className="border-b border-slate-100 px-4 py-3">{row.phone_no || "-"}</td>
+                              <td className="border-b border-slate-100 px-4 py-3">{row.email || "-"}</td>
                               <td className="border-b border-slate-100 px-4 py-3">
-                                <p>{row.client_name || "-"}</p>
-                                <p className="mt-1">{row.phone_no || "-"}</p>
-                                <p className="mt-1">{row.email || "-"}</p>
-                              </td>
-                              <td className="border-b border-slate-100 px-4 py-3">
-                                <p>Est: {row.estimation_no || "-"}</p>
-                                <p className="mt-1">RFQ: {row.rfq_no || "-"}</p>
-                                <p className="mt-1">Reg: {row.registered_date || "-"}</p>
-                                <p className="mt-1">Delivery: {row.delivery_date || "-"}</p>
-                              </td>
-                              <td className="border-b border-slate-100 px-4 py-3">
-                                <p>{row.dress_name || "-"}</p>
-                                <p className="mt-1">Code: {row.dress_code || "-"}</p>
-                                <p className="mt-1">Qty: {row.quantity || 0} {row.dress_unit || "-"}</p>
-                              </td>
-                              <td className="border-b border-slate-100 px-4 py-3">
-                                <p>Terms: {row.payment_terms || "-"}</p>
-                                <p className="mt-1">Tax: {row.tax_preference || "-"}</p>
-                              </td>
-                              <td className="border-b border-slate-100 px-4 py-3">
-                                <p>Location: {row.delivery_location || "-"}</p>
-                                <p className="mt-1">Mode: {row.delivery_mode || "-"}</p>
+                                {row.created_at ? new Date(row.created_at).toLocaleDateString("en-GB") : "-"}
                               </td>
                               <td className="border-b border-slate-100 px-4 py-3">
                                 <span

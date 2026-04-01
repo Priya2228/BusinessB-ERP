@@ -172,9 +172,7 @@ export default function MdCostEstimationListPage() {
                     <th className="border-b border-slate-200 px-4 py-3 font-semibold">Company</th>
                     <th className="border-b border-slate-200 px-4 py-3 font-semibold">Client details</th>
                     <th className="border-b border-slate-200 px-4 py-3 font-semibold">Reference details</th>
-                    <th className="border-b border-slate-200 px-4 py-3 font-semibold">Item details</th>
-                    <th className="border-b border-slate-200 px-4 py-3 font-semibold">Payment details</th>
-                    <th className="border-b border-slate-200 px-4 py-3 font-semibold">Delivery details</th>
+                   
                     <th className="border-b border-slate-200 px-4 py-3 font-semibold">Status</th>
                     <th className="border-b border-slate-200 px-4 py-3 font-semibold">Actions</th>
                   </tr>
@@ -199,21 +197,11 @@ export default function MdCostEstimationListPage() {
                         <p>Est: {row.estimation_no || "-"}</p>
                         <p className="mt-1">RFQ: {row.rfq_no || "-"}</p>
                         <p className="mt-1">Reg: {row.registered_date || "-"}</p>
-                        <p className="mt-1">Delivery: {row.delivery_date || "-"}</p>
+                        
                       </td>
-                      <td className="border-b border-slate-100 px-4 py-3">
-                        <p>{row.dress_name || "-"}</p>
-                        <p className="mt-1">Code: {row.dress_code || "-"}</p>
-                        <p className="mt-1">Qty: {row.quantity || 0} {row.dress_unit || "-"}</p>
-                      </td>
-                      <td className="border-b border-slate-100 px-4 py-3">
-                        <p>Terms: {row.payment_terms || "-"}</p>
-                        <p className="mt-1">Tax: {row.tax_preference || "-"}</p>
-                      </td>
-                      <td className="border-b border-slate-100 px-4 py-3">
-                        <p>Location: {row.delivery_location || "-"}</p>
-                        <p className="mt-1">Mode: {row.delivery_mode || "-"}</p>
-                      </td>
+                      
+                     
+                     
                       <td className="border-b border-slate-100 px-4 py-3">
                         {renderStatus(row.approval_workflow)}
                       </td>

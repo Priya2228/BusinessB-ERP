@@ -16,6 +16,29 @@ const COUNTRY_CONFIG = {
   UK: { currency: "GBP", taxRate: 0.2, symbol: "GBP", conversionRate: 0.0093, decimalPlaces: 2 },
 };
 
+const roundAmount = (value, decimalPlaces) => {
+  const numericValue = Number(value || 0);
+  if (!Number.isFinite(numericValue)) return 0;
+  return Number(numericValue.toFixed(decimalPlaces));
+};
+
+const buildQuotationAmountSummary = (baseAmount, config) => {
+  const safeBaseAmount = Number(baseAmount || 0);
+  const conversionRate = Number(config?.conversionRate || 1);
+  const taxRate = Number(config?.taxRate || 0);
+  const decimalPlaces = Number(config?.decimalPlaces ?? 2);
+  const taxableAmount = roundAmount(safeBaseAmount * conversionRate, decimalPlaces);
+  const taxAmount = roundAmount(taxableAmount * taxRate, decimalPlaces);
+  const totalNetAmount = roundAmount(taxableAmount + taxAmount, decimalPlaces);
+
+  return {
+    taxableAmount,
+    taxAmount,
+    totalNetAmount,
+    subtotal: taxableAmount,
+  };
+};
+
 const VALIDITY_OPTIONS = ["10 Days", "20 Days", "30 Days"];
 
 const addDaysToDate = (dateValue, days) => {
@@ -30,15 +53,89 @@ const formatDateValue = (value) => {
   return String(value).split("T")[0];
 };
 
+const createEmptyScopeRow = () => ({
+  name: "",
+  specification: "",
+  remarks: "",
+});
+
+const normalizeTermText = (value) =>
+  String(value || "")
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^\s*\d+(?:\.\d+)*[.)]?\s*/, "").trim())
+    .filter(Boolean)
+    .join("\n");
+
+const parseScopeField = (value) => {
+  if (!value) return [];
+
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const buildScopeRows = (data) => {
+  const names = parseScopeField(data?.scope_name);
+  const specifications = parseScopeField(data?.scope_specification);
+  const remarks = parseScopeField(data?.scope_remarks);
+  const highestLength = Math.max(names.length, specifications.length, remarks.length);
+
+  if (highestLength > 0) {
+    return Array.from({ length: highestLength }, (_, index) => ({
+      name: String(names[index] || ""),
+      specification: String(specifications[index] || ""),
+      remarks: String(remarks[index] || ""),
+    }));
+  }
+
+  return [
+    {
+      name: data?.scope_name || "",
+      specification: data?.scope_specification || "",
+      remarks: data?.scope_remarks || "",
+    },
+  ];
+};
+
+const serializeScopeField = (rows, key) => {
+  const cleanedRows = (Array.isArray(rows) ? rows : []).map((row) => ({
+    name: String(row?.name || "").trim(),
+    specification: String(row?.specification || "").trim(),
+    remarks: String(row?.remarks || "").trim(),
+  }));
+  const nonEmptyRows = cleanedRows.filter((row) => row.name || row.specification || row.remarks);
+
+  if (nonEmptyRows.length <= 1) {
+    return nonEmptyRows[0]?.[key] || "";
+  }
+
+  return JSON.stringify(nonEmptyRows.map((row) => row[key] || ""));
+};
+
+const getNextQuotationCode = (quotations) => {
+  const highestNumber = (Array.isArray(quotations) ? quotations : []).reduce((maxValue, quotation) => {
+    const match = String(quotation?.quotation_code || "").match(/^QU(\d+)$/i);
+    if (!match) return maxValue;
+    return Math.max(maxValue, Number(match[1] || 0));
+  }, 0);
+
+  return `QU${String(highestNumber + 1).padStart(3, "0")}`;
+};
+
 export default function QuotationPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const editId = searchParams.get("editId");
   const viewId = searchParams.get("viewId");
   const estimationId = searchParams.get("estimationId");
+  const editMode = searchParams.get("editMode");
   const activeId = editId || viewId;
   const isViewMode = Boolean(viewId);
   const isEditMode = Boolean(editId);
+  const isTermsEditMode = editMode === "terms";
 
   const [toast, setToast] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -49,6 +146,8 @@ export default function QuotationPage() {
   const [estimationOptions, setEstimationOptions] = useState([]);
   const [termsOptions, setTermsOptions] = useState([]);
   const [errors, setErrors] = useState({});
+  const [scopeRows, setScopeRows] = useState([createEmptyScopeRow()]);
+  const [baseNetAmount, setBaseNetAmount] = useState(0);
   const [formData, setFormData] = useState({
     customerName: "",
     quotationDate: new Date().toISOString().split("T")[0],
@@ -119,7 +218,7 @@ export default function QuotationPage() {
         setEstimationOptions(Array.isArray(costEstimationsData) ? costEstimationsData : []);
 
         if (!activeId) {
-          const nextCode = `QU${String((Array.isArray(quotationsData) ? quotationsData.length : 0) + 1).padStart(3, "0")}`;
+          const nextCode = getNextQuotationCode(quotationsData);
           setFormData((prev) => ({
             ...prev,
             quotationCode: nextCode,
@@ -127,7 +226,14 @@ export default function QuotationPage() {
         }
 
         if (estimationData && !activeId) {
-          const estimationGrandTotal = Number(estimationData.grand_total || 0) * Number(currentConfig.conversionRate || 1);
+          const estimationGrandTotal = Number(estimationData.grand_total || 0);
+          const amountSummary = buildQuotationAmountSummary(estimationGrandTotal, currentConfig);
+          const nextScopeRow = {
+            name: estimationData.dress_name || "",
+            specification: estimationData.sections ? JSON.stringify(estimationData.sections) : "",
+            remarks: estimationData.remarks || "",
+          };
+          setBaseNetAmount(estimationGrandTotal);
           setFormData((prev) => ({
             ...prev,
             customerName: estimationData.company_name || estimationData.client_name || "",
@@ -141,8 +247,9 @@ export default function QuotationPage() {
             scopeName: estimationData.dress_name || "",
             scopeSpecification: estimationData.sections ? JSON.stringify(estimationData.sections) : "",
             scopeRemarks: estimationData.remarks || "",
-            totalNetAmount: Number(estimationGrandTotal || 0).toFixed(currencyDecimals),
+            totalNetAmount: amountSummary.totalNetAmount.toFixed(currencyDecimals),
           }));
+          setScopeRows([nextScopeRow]);
         }
       } catch {
         showToast("Failed to load quotation data", "error");
@@ -152,7 +259,7 @@ export default function QuotationPage() {
     };
 
     fetchBootstrapData();
-  }, [activeId, currencyDecimals, currentConfig.conversionRate, estimationId]);
+  }, [activeId, estimationId]);
 
   useEffect(() => {
     if (!activeId) return;
@@ -168,6 +275,13 @@ export default function QuotationPage() {
 
         const data = await response.json();
         setSelectedCountry(data.currency_country || "India");
+        const derivedBaseAmount =
+          Number(data.conversion_rate || 1) > 0
+            ? Number(data.taxable_amount || data.subtotal || data.total_net_amount || data.net_amount || 0) /
+              Number(data.conversion_rate || 1)
+            : Number(data.taxable_amount || data.subtotal || data.total_net_amount || data.net_amount || 0);
+        setBaseNetAmount(derivedBaseAmount);
+        const nextScopeRows = buildScopeRows(data);
         setFormData({
           customerName: data.customer_name || "",
           quotationDate: formatDateValue(data.quotation_date),
@@ -181,17 +295,20 @@ export default function QuotationPage() {
           email: data.email || "",
           phoneNo: data.phone_no || "",
           scopeNo: data.scope_no || "",
-          scopeName: data.scope_name || "",
-          scopeSpecification: data.scope_specification || "",
-          scopeRemarks: data.scope_remarks || "",
+          scopeName: nextScopeRows[0]?.name || "",
+          scopeSpecification: nextScopeRows[0]?.specification || "",
+          scopeRemarks: nextScopeRows[0]?.remarks || "",
           paymentTermsOption: "",
-          paymentTerms: data.payment_terms || "",
+          paymentTerms: normalizeTermText(data.payment_terms),
           deliveryTermsOption: "",
-          deliveryTerms: data.delivery_terms || "",
+          deliveryTerms: normalizeTermText(data.delivery_terms),
           generalTermsOption: "",
-          generalTerms: data.general_terms || "",
-          totalNetAmount: Number(data.total_net_amount || data.net_amount || 0).toFixed(currencyDecimals),
+          generalTerms: normalizeTermText(data.general_terms),
+          totalNetAmount: Number(data.total_net_amount || data.net_amount || 0).toFixed(
+            Number(data.decimal_places || 2)
+          ),
         });
+        setScopeRows(nextScopeRows.length ? nextScopeRows : [createEmptyScopeRow()]);
       } catch {
         showToast("Network error while loading quotation", "error");
       } finally {
@@ -200,10 +317,14 @@ export default function QuotationPage() {
     };
 
     fetchQuotationDetail();
-  }, [activeId, currencyDecimals]);
+  }, [activeId]);
 
   useEffect(() => {
+    if (activeId) return;
+
     if (!formData.rfqNo) {
+      setScopeRows([createEmptyScopeRow()]);
+      setBaseNetAmount(0);
       setFormData((prev) => ({
         ...prev,
         customerName: "",
@@ -229,8 +350,16 @@ export default function QuotationPage() {
     const matchedRfq = rfqOptions.find((rfq) => rfq.rfq_no === formData.rfqNo);
     if (!matchedRfq) return;
     const matchedEstimation = estimationOptions.find((estimation) => estimation.rfq_no === matchedRfq.rfq_no);
-    const estimationGrandTotal = Number(matchedEstimation?.grand_total || 0) * Number(currentConfig.conversionRate || 1);
+    const estimationGrandTotal = Number(matchedEstimation?.grand_total || 0);
+    const amountSummary = buildQuotationAmountSummary(estimationGrandTotal, currentConfig);
 
+    const nextScopeRow = {
+      name: matchedRfq.project_title || matchedRfq.service_category || "",
+      specification: matchedRfq.fabric_specs || "",
+      remarks: matchedRfq.scope_of_work || "",
+    };
+
+    setBaseNetAmount(estimationGrandTotal);
     setFormData((prev) => ({
       ...prev,
       customerName: matchedRfq.company_name || matchedRfq.client_name || "",
@@ -243,16 +372,25 @@ export default function QuotationPage() {
       scopeName: matchedRfq.project_title || matchedRfq.service_category || "",
       scopeSpecification: matchedRfq.fabric_specs || "",
       scopeRemarks: matchedRfq.scope_of_work || "",
-      totalNetAmount: Number(estimationGrandTotal || 0).toFixed(currencyDecimals),
+      totalNetAmount: amountSummary.totalNetAmount.toFixed(currencyDecimals),
     }));
-  }, [currencyDecimals, currentConfig.conversionRate, estimationOptions, formData.rfqNo, rfqOptions, termsOptions]);
+    setScopeRows([nextScopeRow]);
+  }, [activeId, currencyDecimals, currentConfig.conversionRate, estimationOptions, formData.rfqNo, rfqOptions, termsOptions]);
+
+  useEffect(() => {
+    const amountSummary = buildQuotationAmountSummary(baseNetAmount, currentConfig);
+    setFormData((prev) => ({
+      ...prev,
+      totalNetAmount: amountSummary.totalNetAmount.toFixed(currencyDecimals),
+    }));
+  }, [baseNetAmount, currencyDecimals, selectedCountry]);
 
   useEffect(() => {
     const selectedOption = termsOptions.find(
       (term) => term.termsCategory === "payment" && term.termsName === formData.paymentTermsOption
     );
     if (!selectedOption) return;
-    setFormData((prev) => ({ ...prev, paymentTerms: selectedOption.termsContent || "" }));
+    setFormData((prev) => ({ ...prev, paymentTerms: normalizeTermText(selectedOption.termsContent) }));
   }, [formData.paymentTermsOption, termsOptions]);
 
   useEffect(() => {
@@ -260,7 +398,7 @@ export default function QuotationPage() {
       (term) => term.termsCategory === "delivery" && term.termsName === formData.deliveryTermsOption
     );
     if (!selectedOption) return;
-    setFormData((prev) => ({ ...prev, deliveryTerms: selectedOption.termsContent || "" }));
+    setFormData((prev) => ({ ...prev, deliveryTerms: normalizeTermText(selectedOption.termsContent) }));
   }, [formData.deliveryTermsOption, termsOptions]);
 
   useEffect(() => {
@@ -268,7 +406,7 @@ export default function QuotationPage() {
       (term) => term.termsCategory === "general" && term.termsName === formData.generalTermsOption
     );
     if (!selectedOption) return;
-    setFormData((prev) => ({ ...prev, generalTerms: selectedOption.termsContent || "" }));
+    setFormData((prev) => ({ ...prev, generalTerms: normalizeTermText(selectedOption.termsContent) }));
   }, [formData.generalTermsOption, termsOptions]);
 
   useEffect(() => {
@@ -286,6 +424,17 @@ export default function QuotationPage() {
       return;
     }
 
+    const preparedScopeRows = scopeRows
+      .map((row) => ({
+        name: String(row?.name || "").trim(),
+        specification: String(row?.specification || "").trim(),
+        remarks: String(row?.remarks || "").trim(),
+      }))
+      .filter((row) => row.name || row.specification || row.remarks);
+    const primaryScope = preparedScopeRows[0] || createEmptyScopeRow();
+
+    const amountSummary = buildQuotationAmountSummary(baseNetAmount, currentConfig);
+
     const payload = {
       customer_name: formData.customerName,
       quotation_code: formData.quotationCode,
@@ -299,27 +448,31 @@ export default function QuotationPage() {
       email: formData.email,
       phone_no: formData.phoneNo,
       scope_no: formData.scopeNo,
-      scope_name: formData.scopeName,
-      scope_specification: formData.scopeSpecification,
-      scope_remarks: formData.scopeRemarks,
-      payment_terms: formData.paymentTerms,
-      delivery_terms: formData.deliveryTerms,
-      general_terms: formData.generalTerms,
+      scope_name: serializeScopeField(preparedScopeRows, "name"),
+      scope_specification: serializeScopeField(preparedScopeRows, "specification"),
+      scope_remarks: serializeScopeField(preparedScopeRows, "remarks"),
+      payment_terms: normalizeTermText(formData.paymentTerms),
+      delivery_terms: normalizeTermText(formData.deliveryTerms),
+      general_terms: normalizeTermText(formData.generalTerms),
       currency_country: selectedCountry,
       currency_symbol: currentConfig.currency,
       conversion_rate: currentConfig.conversionRate,
       tax_rate: currentConfig.taxRate,
       decimal_places: currentConfig.decimalPlaces,
-      taxable_amount: Number(formData.totalNetAmount || 0),
-      tax_amount: 0,
+      taxable_amount: amountSummary.taxableAmount,
+      tax_amount: amountSummary.taxAmount,
       discount_amount: 0,
-      subtotal: Number(formData.totalNetAmount || 0),
+      subtotal: amountSummary.subtotal,
       round_off: 0,
-      net_amount: Number(formData.totalNetAmount || 0),
-      total_net_amount: Number(formData.totalNetAmount || 0),
+      net_amount: amountSummary.totalNetAmount,
+      total_net_amount: amountSummary.totalNetAmount,
       region: selectedCountry,
       items: [],
     };
+
+    payload.scope_name = payload.scope_name || primaryScope.name;
+    payload.scope_specification = payload.scope_specification || primaryScope.specification;
+    payload.scope_remarks = payload.scope_remarks || primaryScope.remarks;
 
     try {
       setSaving(true);
@@ -446,7 +599,7 @@ export default function QuotationPage() {
               type="date"
               value={formData.quotationDate}
               onChange={(event) => setFormData((prev) => ({ ...prev, quotationDate: event.target.value }))}
-              disabled={isViewMode}
+              disabled={isViewMode || isTermsEditMode}
               className="h-[36px] w-full rounded-lg border border-gray-300 bg-[#e6e8eb] px-3 text-[12px] text-gray-700 outline-none"
             />
           </div>
@@ -491,7 +644,7 @@ export default function QuotationPage() {
               <select
                 value={formData.rfqNo}
                 onChange={(event) => setFormData((prev) => ({ ...prev, rfqNo: event.target.value }))}
-                disabled={isViewMode}
+                disabled={isViewMode || isTermsEditMode || isEditMode}
                 className={`h-[36px] w-full appearance-none rounded-lg border px-3 pr-10 text-[12px] outline-none ${
                   errors.rfqNo ? "border-red-500" : "border-gray-300"
                 } ${isViewMode ? "bg-slate-100" : "bg-white"}`}
@@ -555,16 +708,6 @@ export default function QuotationPage() {
         </div>
 
         <h3 className="mt-8 mb-4 text-[18px] font-bold text-black">Scope Details</h3>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
-          
-
-          
-
-       
-
-          
-        </div>
-
         <div className="mt-6 overflow-hidden rounded-xl border border-cyan-200 bg-white">
           <table className="w-full border-collapse text-left">
             <thead>
@@ -576,12 +719,20 @@ export default function QuotationPage() {
               </tr>
             </thead>
             <tbody>
-              <tr className="border-b border-gray-300">
-                <td className="border-r border-gray-300 p-3 text-center text-[13px]">1</td>
-                <td className="border-r border-gray-300 p-3 text-[13px]">{formData.scopeName || "-"}</td>
-                <td className="border-r border-gray-300 p-3 text-[13px]">{formData.scopeSpecification || "-"}</td>
-                <td className="p-3 text-[13px]">{formData.scopeRemarks || "-"}</td>
-              </tr>
+              {scopeRows.map((row, index) => (
+                <tr key={`scope-row-${index}`} className="border-b border-gray-300">
+                  <td className="border-r border-gray-300 p-3 text-center text-[13px]">{index + 1}</td>
+                  <td className="border-r border-gray-300 p-3 text-[13px]">
+                    {row.name || "-"}
+                  </td>
+                  <td className="border-r border-gray-300 p-3 text-[13px]">
+                    <div className="whitespace-pre-wrap">{row.specification || "-"}</div>
+                  </td>
+                  <td className="p-3 text-[13px]">
+                    <div className="whitespace-pre-wrap">{row.remarks || "-"}</div>
+                  </td>
+                </tr>
+              ))}
               <tr className="bg-[#f8fafc] font-semibold">
                 <td colSpan={3} className="border-r border-gray-300 p-3 text-right text-[12px]">
                   Total Net Amount

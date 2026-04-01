@@ -20,6 +20,23 @@ from .models import (
 )
 
 
+def generate_unique_quotation_code():
+    existing_codes = Quotation.objects.values_list("quotation_code", flat=True)
+    highest_number = 0
+
+    for code in existing_codes:
+        if not code:
+            continue
+        normalized_code = str(code).strip().upper()
+        if not normalized_code.startswith("QU"):
+            continue
+        suffix = normalized_code[2:]
+        if suffix.isdigit():
+            highest_number = max(highest_number, int(suffix))
+
+    return f"QU{highest_number + 1:03d}"
+
+
 def resolve_item_category(validated_data):
     item_category = validated_data.pop('item_category', None)
     if item_category:
@@ -116,6 +133,10 @@ class QuotationSerializer(serializers.ModelSerializer):
         items_data = validated_data.pop("items", [])
         region = validated_data.pop("region", "")
         customer_name = validated_data.get("customer_name")
+        quotation_code = (validated_data.get("quotation_code") or "").strip()
+
+        if not quotation_code or Quotation.objects.filter(quotation_code=quotation_code).exists():
+            validated_data["quotation_code"] = generate_unique_quotation_code()
 
         if customer_name:
             last_revision = (
@@ -145,7 +166,6 @@ class QuotationSerializer(serializers.ModelSerializer):
             setattr(instance, attr, value)
 
         if items_data is not None:
-            instance.revise_count = (instance.revise_count or 0) + 1
             instance.save()
             instance.items.all().delete()
 
