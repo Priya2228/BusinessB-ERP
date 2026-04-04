@@ -78,8 +78,8 @@ export default function LoginPage() {
 
           <div className={styles.brandWrap}>
             <Image
-              src="/logo.png"
-              alt="Business Intelligence"
+              src="/majesticlogo.png"
+              alt="Majestic"
               width={250}
               height={78}
               className={styles.logo}

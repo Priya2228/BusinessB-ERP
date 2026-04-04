@@ -180,7 +180,7 @@ export default function SalesInvoiceList() {
     };
 
     // 1. Header Section
-    try { doc.addImage("/logo.png", 'PNG', 14, 10, 50, 20); } 
+    try { doc.addImage("/majesticlogo.png", 'png', 14, 10, 50, 20); } 
     catch (e) { 
       doc.setFontSize(18); doc.setFont("helvetica", "bold"); 
       doc.text("FASHION WORLD", 14, 20); 

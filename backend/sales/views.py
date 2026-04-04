@@ -9,6 +9,8 @@ from .models import (
     Dispatchdetails,
     InvoiceItem,
     Quotation,
+    PurchaseOrder,
+    QuotationApproval,
     Item,
     SalesServiceRequest,
     CostEstimation,
@@ -25,6 +27,7 @@ from .serializers import (
     DispatchdetailsSerializer,
     InvoiceItemSerializer,
     QuotationSerializer,
+    PurchaseOrderSerializer,
     ItemSerializer,
     SalesServiceRequestSerializer,
     CostEstimationSerializer,
@@ -47,6 +50,7 @@ from .models import Dispatchdetails, InvoiceItem
 from django.shortcuts import render
 # CORRECT IMPORT
 from rest_framework.authtoken.models import Token
+from .website_profile import get_website_profile
 
 ITEM_BOOLEAN_FIELDS = [
     'is_stock',
@@ -359,14 +363,55 @@ def dispatch_detail_update_delete(request, pk):
 def quotation_list_create(request):
     if request.method == 'GET':
         quotations = Quotation.objects.all().prefetch_related('items')
+        for quotation in quotations:
+            QuotationApproval.objects.get_or_create(quotation=quotation)
         serializer = QuotationSerializer(quotations, many=True)
         return Response(serializer.data)
 
     serializer = QuotationSerializer(data=request.data)
     if serializer.is_valid():
         quotation = serializer.save()
+        QuotationApproval.objects.get_or_create(quotation=quotation)
         return Response(QuotationSerializer(quotation).data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET', 'POST'])
+def purchase_order_list_create(request):
+    if request.method == 'GET':
+        purchase_orders = PurchaseOrder.objects.all()
+        serializer = PurchaseOrderSerializer(purchase_orders, many=True, context={'request': request})
+        return Response(serializer.data)
+
+    serializer = PurchaseOrderSerializer(data=request.data, context={'request': request})
+    if serializer.is_valid():
+        purchase_order = serializer.save()
+        return Response(PurchaseOrderSerializer(purchase_order, context={'request': request}).data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET', 'PUT', 'DELETE'])
+def purchase_order_detail_update_delete(request, pk):
+    purchase_order = get_object_or_404(PurchaseOrder, pk=pk)
+
+    if request.method == 'GET':
+        serializer = PurchaseOrderSerializer(purchase_order, context={'request': request})
+        return Response(serializer.data)
+
+    if request.method == 'PUT':
+        serializer = PurchaseOrderSerializer(
+            purchase_order,
+            data=request.data,
+            partial=True,
+            context={'request': request},
+        )
+        if serializer.is_valid():
+            purchase_order = serializer.save()
+            return Response(PurchaseOrderSerializer(purchase_order, context={'request': request}).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    purchase_order.delete()
+    return Response({'message': 'Deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
 
 
 @api_view(['GET', 'PUT', 'DELETE'])
@@ -374,12 +419,15 @@ def quotation_detail_update_delete(request, pk):
     quotation = get_object_or_404(Quotation.objects.prefetch_related('items'), pk=pk)
 
     if request.method == 'GET':
+        QuotationApproval.objects.get_or_create(quotation=quotation)
         return Response(QuotationSerializer(quotation).data)
 
     if request.method == 'PUT':
-        serializer = QuotationSerializer(quotation, data=request.data)
+        serializer = QuotationSerializer(quotation, data=request.data, partial=True)
         if serializer.is_valid():
             quotation = serializer.save()
+            approval, _ = QuotationApproval.objects.get_or_create(quotation=quotation)
+            reset_approval_workflow(approval)
             return Response(QuotationSerializer(quotation).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -468,11 +516,26 @@ def sync_approved_estimation_to_quotation(estimation, increment_revision=True):
     ])
 
 
+def reset_approval_workflow(approval):
+    approval.sent_to_head = False
+    approval.sent_to_head_at = None
+    approval.head_status = 'pending'
+    approval.head_comment = ''
+    approval.head_reviewed_at = None
+    approval.head_reviewed_by = None
+    approval.md_status = 'pending'
+    approval.md_comment = ''
+    approval.md_reviewed_at = None
+    approval.md_reviewed_by = None
+    approval.save()
+
+
 def view_quotation(request, quotation_id):
     quotation = get_object_or_404(Quotation, id=quotation_id)
     sales_service = SalesServiceRequest.objects.filter(rfq_no=quotation.rfq_no).first()
+    website_profile = get_website_profile()
     host_name = request.get_host().split(":")[0]
-    logo_url = f"{request.scheme}://{host_name}:3000/logo.png"
+    logo_url = f"{request.scheme}://{host_name}:3000/majesticlogo.png"
     decimal_places = int(getattr(quotation, "decimal_places", 2) or 2)
     scope_rows = [
         row for row in parse_scope_rows(quotation)
@@ -484,6 +547,9 @@ def view_quotation(request, quotation_id):
     if len(general_lines) < 10:
         general_lines = get_default_general_terms_lines()
     terms_lines = payment_lines + delivery_lines + general_lines
+    sender_name = (website_profile.get("company_name") or "Marine Dubai").strip()
+    if sender_name.lower().startswith("welcome to "):
+        sender_name = sender_name[11:].strip()
 
     context = {
         "quotation": quotation,
@@ -492,17 +558,15 @@ def view_quotation(request, quotation_id):
         "formatted_total_amount": f"{float(quotation.total_net_amount or quotation.net_amount or 0):.{decimal_places}f}",
         "scope_rows": scope_rows,
         "single_scope_row": len(scope_rows) == 1,
-        "sender_name": "PRIYA FASHIONS",
+        "sender_name": sender_name,
         "sender_address_lines": [
-            "72 north car street ext,",
-            "Thoothukudi-628002",
-            "Email: test@gmail.com",
-            "TRN: 34354345",
-            "TEL NO.: 324324324324",
+            website_profile.get("client_location") or "-",
+            f"Email: {website_profile.get('email') or '-'}",
+            f"TEL NO.: {website_profile.get('phone_no') or '-'}",
         ],
-        "client_location": getattr(sales_service, "client_location", "") or "-",
-        "client_email": quotation.email or getattr(sales_service, "email", "") or "demo@gmail.com",
-        "client_phone": quotation.phone_no or getattr(sales_service, "phone_no", "") or "9856321478",
+        "client_location": getattr(sales_service, "client_location", "") or website_profile.get("client_location") or "-",
+        "client_email": quotation.email or getattr(sales_service, "email", "") or website_profile.get("email") or "-",
+        "client_phone": quotation.phone_no or getattr(sales_service, "phone_no", "") or website_profile.get("phone_no") or "-",
         "payment_lines": payment_lines,
         "delivery_lines": delivery_lines,
         "general_lines": general_lines,
@@ -649,17 +713,7 @@ def cost_estimation_detail_update_delete(request, pk):
         if serializer.is_valid():
             estimation = serializer.save()
             approval, _ = CostEstimationApproval.objects.get_or_create(cost_estimation=estimation)
-            approval.sent_to_head = False
-            approval.sent_to_head_at = None
-            approval.head_status = 'pending'
-            approval.head_comment = ''
-            approval.head_reviewed_at = None
-            approval.head_reviewed_by = None
-            approval.md_status = 'pending'
-            approval.md_comment = ''
-            approval.md_reviewed_at = None
-            approval.md_reviewed_by = None
-            approval.save()
+            reset_approval_workflow(approval)
             return Response(CostEstimationSerializer(estimation, context={'request': request}).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -669,6 +723,12 @@ def cost_estimation_detail_update_delete(request, pk):
 
 @api_view(['GET'])
 def cost_estimation_option_catalog(request):
+    website_profile = get_website_profile()
+    website_options = website_profile.get("cost_estimation_options") or {}
+
+    if any(website_options.get(section) for section in website_options):
+        return Response(website_options)
+
     return Response({
         'rawMaterial': RawMaterialOptionSerializer(RawMaterialOption.objects.filter(is_active=True), many=True).data,
         'productionCost': ProductionCostOptionSerializer(ProductionCostOption.objects.filter(is_active=True), many=True).data,
@@ -678,6 +738,11 @@ def cost_estimation_option_catalog(request):
         'packagingLogistics': PackagingLogisticsOptionSerializer(PackagingLogisticsOption.objects.filter(is_active=True), many=True).data,
         'miscellaneous': MiscellaneousOptionSerializer(MiscellaneousOption.objects.filter(is_active=True), many=True).data,
     })
+
+
+@api_view(['GET'])
+def website_company_profile(request):
+    return Response(get_website_profile())
 
 
 @api_view(['POST'])
@@ -690,8 +755,16 @@ def cost_estimation_approval_update(request, pk):
 
     if action == 'send_to_head':
         approval.sent_to_head = True
-        approval.sent_to_head_at = approval.sent_to_head_at or timezone.now()
-        approval.save(update_fields=['sent_to_head', 'sent_to_head_at', 'updated_at'])
+        approval.sent_to_head_at = timezone.now()
+        approval.head_status = 'pending'
+        approval.head_comment = ''
+        approval.head_reviewed_at = None
+        approval.head_reviewed_by = None
+        approval.md_status = 'pending'
+        approval.md_comment = ''
+        approval.md_reviewed_at = None
+        approval.md_reviewed_by = None
+        approval.save()
         return Response(CostEstimationApprovalSerializer(approval).data)
 
     if action == 'head_review':
@@ -733,6 +806,67 @@ def cost_estimation_approval_update(request, pk):
         if review_status == 'approved' and previous_md_status != 'approved':
             sync_approved_estimation_to_quotation(estimation, increment_revision=True)
 
+        return Response(CostEstimationApprovalSerializer(approval).data)
+
+    return Response({'action': ['Unsupported approval action.']}, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def quotation_approval_update(request, pk):
+    quotation = get_object_or_404(Quotation, pk=pk)
+    approval, _ = QuotationApproval.objects.get_or_create(quotation=quotation)
+    action = request.data.get('action')
+
+    if action == 'send_to_head':
+        approval.sent_to_head = True
+        approval.sent_to_head_at = timezone.now()
+        approval.head_status = 'pending'
+        approval.head_comment = ''
+        approval.head_reviewed_at = None
+        approval.head_reviewed_by = None
+        approval.md_status = 'pending'
+        approval.md_comment = ''
+        approval.md_reviewed_at = None
+        approval.md_reviewed_by = None
+        approval.save()
+        return Response(CostEstimationApprovalSerializer(approval).data)
+
+    if action == 'head_review':
+        review_status = request.data.get('status')
+        if review_status not in {'approved', 'declined'}:
+            return Response({'status': ['Status must be approved or declined.']}, status=status.HTTP_400_BAD_REQUEST)
+
+        approval.sent_to_head = True
+        approval.sent_to_head_at = approval.sent_to_head_at or timezone.now()
+        approval.head_status = review_status
+        approval.head_comment = (request.data.get('comment') or '').strip()
+        approval.head_reviewed_at = timezone.now()
+        approval.head_reviewed_by = getattr(request, 'user', None) if getattr(request, 'user', None) and request.user.is_authenticated else None
+
+        if review_status != 'approved':
+            approval.md_status = 'pending'
+            approval.md_comment = ''
+            approval.md_reviewed_at = None
+            approval.md_reviewed_by = None
+
+        approval.save()
+        return Response(CostEstimationApprovalSerializer(approval).data)
+
+    if action == 'md_review':
+        if approval.head_status != 'approved':
+            return Response({'detail': 'Head approval required first.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        review_status = request.data.get('status')
+        if review_status not in {'approved', 'declined'}:
+            return Response({'status': ['Status must be approved or declined.']}, status=status.HTTP_400_BAD_REQUEST)
+
+        approval.md_status = review_status
+        approval.md_comment = (request.data.get('comment') or '').strip()
+        approval.md_reviewed_at = timezone.now()
+        approval.md_reviewed_by = getattr(request, 'user', None) if getattr(request, 'user', None) and request.user.is_authenticated else None
+        approval.save()
         return Response(CostEstimationApprovalSerializer(approval).data)
 
     return Response({'action': ['Unsupported approval action.']}, status=status.HTTP_400_BAD_REQUEST)

@@ -56,6 +56,12 @@ class InvoiceItem(models.Model):
 
 
 class Quotation(models.Model):
+    CLIENT_STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("accepted", "Accepted"),
+        ("rejected", "Rejected"),
+    ]
+
     customer_name = models.CharField(max_length=150)
     quotation_code = models.CharField(max_length=50, unique=True)
     quotation_date = models.DateField()
@@ -76,6 +82,8 @@ class Quotation(models.Model):
     general_terms = models.TextField(blank=True, null=True)
     total_net_amount = models.FloatField(default=0)
     remarks = models.TextField(blank=True, null=True)
+    client_status = models.CharField(max_length=20, choices=CLIENT_STATUS_CHOICES, default="pending")
+    client_response_remarks = models.TextField(blank=True, null=True)
     terms_type = models.CharField(max_length=100, blank=True, null=True)
     terms_conditions = models.TextField(blank=True, null=True)
     currency_country = models.CharField(max_length=50, default="India")
@@ -125,6 +133,33 @@ class QuotationItem(models.Model):
 
     def __str__(self):
         return f"{self.item_name} ({self.quotation_id})"
+
+
+class PurchaseOrder(models.Model):
+    po_no = models.CharField(max_length=50, unique=True)
+    quotation_no = models.CharField(max_length=50, blank=True, null=True)
+    cost_estimation_no = models.CharField(max_length=50, blank=True, null=True)
+    po_date = models.DateField()
+    po_received_date = models.DateField(blank=True, null=True)
+    expected_delivery_date = models.DateField(blank=True, null=True)
+    file_attachment = models.FileField(upload_to="purchase_orders/", blank=True, null=True)
+    rfq_no = models.CharField(max_length=50, blank=True, null=True)
+    attention = models.CharField(max_length=150, blank=True, null=True)
+    company_address = models.TextField(blank=True, null=True)
+    client_address = models.TextField(blank=True, null=True)
+    email = models.EmailField(blank=True, null=True)
+    phone_number = models.CharField(max_length=20, blank=True, null=True)
+    scope_rows = models.JSONField(default=list, blank=True)
+    total_net_amount = models.FloatField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name_plural = "Purchase Orders"
+
+    def __str__(self):
+        return f"{self.po_no} - {self.quotation_no or self.rfq_no or 'Purchase Order'}"
 
 
 class Item(models.Model):
@@ -285,6 +320,54 @@ class CostEstimationApproval(models.Model):
 
     def __str__(self):
         return f"Approval - {self.cost_estimation.estimation_no}"
+
+
+class QuotationApproval(models.Model):
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("approved", "Approved"),
+        ("declined", "Declined"),
+    ]
+
+    quotation = models.OneToOneField(
+        Quotation,
+        on_delete=models.CASCADE,
+        related_name="approval_workflow",
+    )
+    sent_to_head = models.BooleanField(default=False)
+    sent_to_head_at = models.DateTimeField(blank=True, null=True)
+
+    head_status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    head_comment = models.TextField(blank=True, null=True)
+    head_reviewed_at = models.DateTimeField(blank=True, null=True)
+    head_reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="head_quotation_reviews",
+    )
+
+    md_status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    md_comment = models.TextField(blank=True, null=True)
+    md_reviewed_at = models.DateTimeField(blank=True, null=True)
+    md_reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="md_quotation_reviews",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at", "-id"]
+        verbose_name_plural = "Quotation Approvals"
+
+    def __str__(self):
+        return f"Quotation Approval - {self.quotation.quotation_code}"
 
 
 class CostEstimationOptionBase(models.Model):

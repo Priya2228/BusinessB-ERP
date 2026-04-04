@@ -2,26 +2,26 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Pencil } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import AppPageShell from "../../../../components/AppPageShell";
 import { buildApiUrl } from "../../../../utils/api";
 
 const sectionTitles = {
   rawMaterial: "Raw Material",
-  productionCost: "Production Cost",
-  addonCost: "Add-on Cost",
-  sewingCost: "Sewing Cost",
-  packagingLogistics: "Packaging & Logistics",
+  productionCost: "Services",
+  addonCost: "Overhead",
+  sewingCost: "Manpower",
+  packagingLogistics: "Transport",
   threadworkFinishing: "Threadwork & Finishing",
   miscellaneous: "Miscellaneous",
 };
 
 const summaryOrder = [
   ["rawMaterial", "Raw Material Total"],
-  ["productionCost", "Production Cost Total"],
-  ["addonCost", "Add-on Cost Total"],
-  ["sewingCost", "Sewing Cost Total"],
-  ["packagingLogistics", "Packaging & Logistics Total"],
+  ["productionCost", "Services Total"],
+  ["addonCost", "Overhead Total"],
+  ["sewingCost", "Manpower Total"],
+  ["packagingLogistics", "Transport Total"],
   ["threadworkFinishing", "Threadwork & Finishing Total"],
   ["miscellaneous", "Miscellaneous Total"],
 ];

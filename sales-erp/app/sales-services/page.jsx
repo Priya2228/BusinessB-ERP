@@ -11,6 +11,8 @@ const quickLinks = [
   { title: "Quotation", icon: ReceiptText, href: "/sales-services/quotation" },
   { title: "Dept Head Cost Estimation List", icon: UserCheck, href: "/sales-services/dept-head-cost-estimation-list" },
   { title: "MD Cost Estimation List", icon: BriefcaseBusiness, href: "/sales-services/md-cost-estimation-list" },
+  { title: "Head Quotation List", icon: UserCheck, href: "/sales-services/head-quotation-list" },
+  { title: "MD Quotation List", icon: BriefcaseBusiness, href: "/sales-services/md-quotation-list" },
 ];
 
 export default function SalesServicesPage() {

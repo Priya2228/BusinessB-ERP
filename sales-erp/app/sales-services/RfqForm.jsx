@@ -6,22 +6,6 @@ import { List, X } from "lucide-react";
 import AppPageShell from "../components/AppPageShell";
 import { buildApiUrl } from "../utils/api";
 
-const SERVICE_CATEGORIES = [
-  "Product Requirement",
-  "Service Requirement",
-  "Custom Requirement",
-  "Bulk Supply",
-  "Sample / Prototype",
-  "Other"
-];
-
-const BRANDING_OPTIONS = [
-  "Standard Delivery",
-  "Custom Branding",
-  "White Label / Client Brand",
-  "Not Applicable"
-];
-
 const ENQUIRY_MODES = ["Email", "Phone", "Verbal"];
 
 const PLAN_RFQ_TYPES = [
@@ -119,6 +103,47 @@ function SelectField({ label, name, value, onChange, options, error }) {
   );
 }
 
+function ServiceScopeField({ options, values, scopeValue, onToggle, onScopeChange, error }) {
+  return (
+    <div className="rounded-[18px] border border-slate-200 bg-white p-5">
+      <h3 className="text-[14px] font-bold text-slate-900">Service Details</h3>
+      <div className="mt-5">
+        <p className="text-[13px] font-medium text-slate-800">Marine related service</p>
+        <div className={`mt-3 rounded-[12px] ${error ? "border border-red-400 bg-red-50 p-4" : ""}`}>
+          <div className="grid gap-x-10 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
+            {options.map((option) => {
+              const checked = values.includes(option);
+              return (
+                <label key={option} className="flex items-start gap-3 text-[13px] text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => onToggle(option)}
+                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-violet-500 focus:ring-violet-400"
+                  />
+                  <span>{option}</span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+        {error ? <p className="mt-1 text-[11px] font-medium text-red-500">{error}</p> : null}
+      </div>
+
+      <div className="mt-6">
+        <label className={labelClassName}>Scope area</label>
+        <textarea
+          name="fabricSpecs"
+          value={scopeValue}
+          onChange={onScopeChange}
+          rows={5}
+          className={`min-h-[138px] w-full rounded-[10px] border bg-white p-3 text-[13px] text-slate-800 outline-none transition focus:border-cyan-400 ${error ? "border-red-400 bg-red-50" : "border-slate-300"}`}
+        />
+      </div>
+    </div>
+  );
+}
+
 function SectionCard({ title, children }) {
   return (
     <section className="rounded-[18px] border border-slate-200 bg-[#fbfdff] p-5 shadow-[0_4px_12px_rgba(15,23,42,0.04)] transition-all duration-200 hover:-translate-y-[1px] hover:border-gray-700 hover:shadow-[0_10px_24px_rgba(14,116,144,0.12)]">
@@ -159,9 +184,13 @@ export default function RfqForm() {
   const [toast, setToast] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingRecord, setIsLoadingRecord] = useState(Boolean(editId));
+  const [serviceCategoryOptions, setServiceCategoryOptions] = useState([]);
   const isEmailMode = formData.enquiryMode === "Email";
   const isPhoneMode = formData.enquiryMode === "Phone";
   const isVerbalMode = formData.enquiryMode === "Verbal";
+  const selectedMarineServices = formData.serviceCategory
+    ? formData.serviceCategory.split(",").map((item) => item.trim()).filter(Boolean)
+    : [];
 
   const getAuthHeaders = () => {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -204,6 +233,47 @@ export default function RfqForm() {
       router.push("/login");
     }
   }, [router]);
+
+  useEffect(() => {
+    const loadWebsiteProfile = async () => {
+      try {
+        const response = await fetch(buildApiUrl("/api/website-company-profile/"), {
+          headers: getAuthHeaders(),
+        });
+        if (!response.ok) {
+          return;
+        }
+
+        const profile = await response.json();
+        const nextServiceCategories = Array.isArray(profile?.service_categories)
+          ? profile.service_categories.filter(Boolean)
+          : [];
+        setServiceCategoryOptions(nextServiceCategories);
+
+        if (editId) {
+          return;
+        }
+
+        setFormData((prev) => ({
+          ...prev,
+          clientName: prev.clientName || profile?.client_name || "",
+          companyName: prev.companyName || profile?.company_name || "",
+          clientLocation: prev.clientLocation || profile?.client_location || "",
+          phoneNo: prev.phoneNo || profile?.phone_no || "",
+          email: prev.email || profile?.email || "",
+          serviceCategory: prev.serviceCategory || "",
+          projectTitle: prev.projectTitle || "",
+          fabricSpecs: prev.fabricSpecs || "",
+          scopeOfWork:
+            prev.scopeOfWork || (Array.isArray(profile?.brief_services) ? profile.brief_services.join("\n") : ""),
+        }));
+      } catch {
+        setServiceCategoryOptions([]);
+      }
+    };
+
+    loadWebsiteProfile();
+  }, [editId]);
 
   useEffect(() => {
     if (!editId) {
@@ -289,6 +359,35 @@ export default function RfqForm() {
     setErrors((prev) => ({ ...prev, [name]: "" }));
   };
 
+  const handleMarineServiceToggle = (serviceName) => {
+    setFormData((prev) => {
+      const currentSelections = prev.serviceCategory
+        ? prev.serviceCategory.split(",").map((item) => item.trim()).filter(Boolean)
+        : [];
+      const nextSelections = currentSelections.includes(serviceName)
+        ? currentSelections.filter((item) => item !== serviceName)
+        : [...currentSelections, serviceName];
+      const previousAutoScope = currentSelections.join("\n");
+      const nextAutoScope = nextSelections.join("\n");
+      const currentPrimaryTitle = currentSelections[0] || "";
+      const nextPrimaryTitle = nextSelections[0] || "";
+
+      return {
+        ...prev,
+        serviceCategory: nextSelections.join(", "),
+        projectTitle:
+          !prev.projectTitle || prev.projectTitle === currentPrimaryTitle
+            ? nextPrimaryTitle
+            : prev.projectTitle,
+        fabricSpecs:
+          !prev.fabricSpecs.trim() || prev.fabricSpecs === previousAutoScope
+            ? nextAutoScope
+            : prev.fabricSpecs,
+      };
+    });
+    setErrors((prev) => ({ ...prev, serviceCategory: "", fabricSpecs: "" }));
+  };
+
   const resetForm = () => {
     if (editId) {
       router.push("/sales-services/rfq-list");
@@ -309,13 +408,12 @@ export default function RfqForm() {
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
         nextErrors.email = "Enter a valid email address.";
       }
-    } else if (isPhoneMode && !/^\d{10}$/.test(formData.phoneNo)) {
-      nextErrors.phoneNo = "Phone number must be 10 digits.";
+    } else if (isPhoneMode && !/^\d{7,15}$/.test(formData.phoneNo)) {
+      nextErrors.phoneNo = "Phone number must be between 7 and 15 digits.";
     }
     
-    if (!formData.projectTitle.trim()) nextErrors.projectTitle = "Enquiry subject is required.";
-    if (!formData.serviceCategory) nextErrors.serviceCategory = "Select a service category.";
-    if (!formData.fabricSpecs.trim()) nextErrors.fabricSpecs = "Product specification is required.";
+    if (!selectedMarineServices.length) nextErrors.serviceCategory = "Select at least one marine service.";
+    if (!formData.fabricSpecs.trim()) nextErrors.fabricSpecs = "Scope area is required.";
     if (!formData.planRfqType) nextErrors.planRfqType = "Plan RFQ type is required.";
     if (!formData.planStartDate) nextErrors.planStartDate = "Starting date is required.";
     if (!formData.expectedDeadline) nextErrors.expectedDeadline = "Plan end date is required.";
@@ -456,7 +554,7 @@ export default function RfqForm() {
               {isEmailMode ? (
                 <FormField label="Email" name="email" type="email" value={formData.email} onChange={handleChange} error={errors.email} />
               ) : isPhoneMode ? (
-                <FormField label="Phone No" name="phoneNo" inputMode="numeric" maxLength={10} value={formData.phoneNo} onChange={handleChange} error={errors.phoneNo} />
+                <FormField label="Phone No" name="phoneNo" inputMode="numeric" maxLength={15} value={formData.phoneNo} onChange={handleChange} error={errors.phoneNo} />
               ) : (
                 <div className="hidden md:block"></div>
               )}
@@ -488,46 +586,14 @@ export default function RfqForm() {
           </SectionCard>
 
           <SectionCard title="RFQ Scope">
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              <FormField 
-                label="Enquiry Subject" 
-                name="projectTitle" 
-                value={formData.projectTitle} 
-                onChange={handleChange} 
-                error={errors.projectTitle} 
-                placeholder="Enter the enquiry subject" 
-              />
-              <SelectField 
-                label="Service Category" 
-                name="serviceCategory" 
-                value={formData.serviceCategory} 
-                onChange={handleChange} 
-                options={SERVICE_CATEGORIES} 
-                error={errors.serviceCategory} 
-              />
-              <FormField 
-                label="Product Specifications" 
-                name="fabricSpecs" 
-                value={formData.fabricSpecs} 
-                onChange={handleChange} 
-                error={errors.fabricSpecs}
-                placeholder="Mention the required product or service specifications" 
-              />
-              <SelectField 
-                label="Branding Preference" 
-                name="brandingType" 
-                value={formData.brandingType} 
-                onChange={handleChange} 
-                options={BRANDING_OPTIONS} 
-              />
-              <TextAreaField 
-                label="Remarks" 
-                name="sizeBreakdown" 
-                value={formData.sizeBreakdown} 
-                onChange={handleChange} 
-                placeholder="Add any remarks, notes, special instructions, or supporting details for the RFQ."
-              />
-            </div>
+            <ServiceScopeField
+              options={serviceCategoryOptions}
+              values={selectedMarineServices}
+              scopeValue={formData.fabricSpecs}
+              onToggle={handleMarineServiceToggle}
+              onScopeChange={handleChange}
+              error={errors.serviceCategory || errors.fabricSpecs}
+            />
           </SectionCard>
 
           <SectionCard title="Planning">

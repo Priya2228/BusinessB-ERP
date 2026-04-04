@@ -19,12 +19,11 @@ const createCostSheetNo = () => `EST-${Date.now().toString().slice(-6)}`;
 
 const sectionConfigs = [
   { key: "rawMaterial", title: "Raw Material" },
-  { key: "productionCost", title: "Service Cost" },
-  { key: "addonCost", title: "Overhead" },
-  { key: "sewingCost", title: "Sewing Cost" },
+  { key: "productionCost", title: "Services" },
+  { key: "sewingCost", title: "Manpower" },
   { key: "packagingLogistics", title: "Transport" },
-  { key: "threadworkFinishing", title: "Threadwork & Finishing" },
-  { key: "miscellaneous", title: "Miscellaneous" },
+  { key: "addonCost", title: "Overhead", manualEntry: true },
+  { key: "miscellaneous", title: "Miscellaneous", manualEntry: true },
 ];
 
 const createEmptyRow = () => ({
@@ -155,6 +154,7 @@ function InfoCard({ children }) {
 function CostSection({
   title,
   dropdownLabel,
+  manualEntry = false,
   draft,
   rows,
   options,
@@ -177,8 +177,16 @@ function CostSection({
       </div>
 
       <div className="mt-3 grid gap-3 md:grid-cols-3 xl:grid-cols-[minmax(0,1.6fr)_repeat(4,minmax(0,0.8fr))_110px]">
-          <div>
-            <label className={labelClassName}>{dropdownLabel}</label>
+        <div>
+          <label className={labelClassName}>{dropdownLabel}</label>
+          {manualEntry ? (
+            <input
+              value={draft.itemName}
+              onChange={(event) => onDraftChange("itemName", event.target.value)}
+              className={inputClassName}
+              placeholder={`Enter ${dropdownLabel.toLowerCase()}`}
+            />
+          ) : (
             <select
               value={draft.itemId}
               onChange={(event) => onItemSelect(event.target.value)}
@@ -191,7 +199,8 @@ function CostSection({
                 </option>
               ))}
             </select>
-          </div>
+          )}
+        </div>
           <ReadOnlyField label="Unit" value={draft.unit} />
           <Field
             label="Cost"
@@ -210,7 +219,7 @@ function CostSection({
             <button
               type="button"
               onClick={onSubmitRow}
-              disabled={!draft.itemId}
+              disabled={manualEntry ? !draft.itemName.trim() : !draft.itemId}
               className="flex h-[34px] w-full items-center justify-center rounded-[8px] border border-emerald-200 bg-emerald-50 px-3 text-[12px] font-semibold text-emerald-700 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
             >
               {isEditing ? "Update" : "Add"}
@@ -280,12 +289,33 @@ function CostSection({
   );
 }
 
+function SimpleAmountSection({ title, value, onChange }) {
+  return (
+    <section className="rounded-[14px] border border-slate-200 bg-white p-3 shadow-[0_4px_12px_rgba(15,23,42,0.04)] transition-all duration-200 hover:border-gray-700">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-[13px] font-bold text-slate-900">{title}</h2>
+        <div className="rounded-full bg-sky-50 px-3 py-1 text-[11px] font-semibold text-sky-700">
+          Total {title} Cost: {Number(value || 0).toFixed(2)}
+        </div>
+      </div>
+
+      <div className="mt-3 max-w-[260px]">
+        <Field
+          label={title}
+          value={value}
+          onChange={onChange}
+          className="text-right"
+          placeholder={`Enter ${title.toLowerCase()} amount`}
+        />
+      </div>
+    </section>
+  );
+}
+
 export default function ClothSalesCostSheetPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const editId = searchParams.get("editId");
-  const revisionMode = searchParams.get("revisionMode");
-  const isPricingRevisionMode = revisionMode === "pricing";
   const [formData, setFormData] = useState(createInitialForm);
   const [rfqOptions, setRfqOptions] = useState([]);
   const [sectionOptionCatalog, setSectionOptionCatalog] = useState({});
@@ -429,6 +459,12 @@ export default function ClothSalesCostSheetPage() {
   const updateDraftRow = (sectionKey, field, value) => {
     setSectionDrafts((prev) => {
       const nextRow = { ...prev[sectionKey], [field]: value };
+      const sectionConfig = sectionConfigs.find((section) => section.key === sectionKey);
+      if (sectionConfig?.manualEntry && field === "itemName") {
+        nextRow.itemId = value.trim() ? `manual-${sectionKey}` : "";
+        nextRow.details = value;
+        nextRow.unit = nextRow.unit || "Job";
+      }
       const rate = Number(nextRow.rate || 0);
       const quantity = Number(nextRow.quantity || 0);
       nextRow.amount = rate * quantity;
@@ -460,26 +496,58 @@ export default function ClothSalesCostSheetPage() {
           itemType: "",
           itemCategory: selectedItem?.item_category || titleCaseSection(sectionKey),
           batchNo: "",
-          rate: selectedItem?.cost ? String(selectedItem.cost) : "",
+          rate: selectedItem?.cost !== undefined && selectedItem?.cost !== null ? String(selectedItem.cost) : "",
           amount: selectedRate * quantity,
         },
       };
     });
   };
 
+  const updateSimpleSectionAmount = (sectionKey, rawValue) => {
+    const value = rawValue.replace(/[^\d.]/g, "");
+    const amount = Number(value || 0);
+
+    setSections((prev) => ({
+      ...prev,
+      [sectionKey]: value
+        ? [{
+            id: `${sectionKey}-amount`,
+            itemId: `manual-${sectionKey}`,
+            itemName: titleCaseSection(sectionKey),
+            details: titleCaseSection(sectionKey),
+            unit: "Job",
+            rate: value,
+            quantity: "1",
+            amount,
+          }]
+        : [],
+    }));
+  };
+
   const submitSectionRow = (sectionKey) => {
     const draft = sectionDrafts[sectionKey];
-    if (!draft.itemId) return;
+    const sectionConfig = sectionConfigs.find((section) => section.key === sectionKey);
+    const hasSelection = sectionConfig?.manualEntry ? draft.itemName.trim() : draft.itemId;
+    if (!hasSelection) return;
     if (Number(draft.quantity || 0) <= 0) {
       showToast("Quantity must be greater than 0 before adding.", "error");
       return;
     }
 
+    const preparedDraft = sectionConfig?.manualEntry
+      ? {
+          ...draft,
+          itemId: draft.itemId || `manual-${sectionKey}`,
+          details: draft.details || draft.itemName,
+          unit: draft.unit || "Job",
+        }
+      : { ...draft };
+
     setSections((prev) => ({
       ...prev,
       [sectionKey]: prev[sectionKey].some((row) => row.id === draft.id)
-        ? prev[sectionKey].map((row) => (row.id === draft.id ? { ...draft } : row))
-        : [...prev[sectionKey], { ...draft }],
+        ? prev[sectionKey].map((row) => (row.id === draft.id ? preparedDraft : row))
+        : [...prev[sectionKey], preparedDraft],
     }));
 
     setSectionDrafts((prev) => ({
@@ -596,11 +664,10 @@ export default function ClothSalesCostSheetPage() {
 
   const summaryRows = [
     { label: "Raw Material Total", value: sectionTotals.rawMaterial || 0 },
-    { label: "Service Cost Total", value: sectionTotals.productionCost || 0 },
-    { label: "Overhead Cost Total", value: sectionTotals.addonCost || 0 },
-    { label: "Sewing Cost Total", value: sectionTotals.sewingCost || 0 },
-    { label: "Transport", value: sectionTotals.packagingLogistics || 0 },
-    { label: "Threadwork & Finishing Total", value: sectionTotals.threadworkFinishing || 0 },
+    { label: "Services Total", value: sectionTotals.productionCost || 0 },
+    { label: "Manpower Total", value: sectionTotals.sewingCost || 0 },
+    { label: "Transport Total", value: sectionTotals.packagingLogistics || 0 },
+    { label: "Overhead Total", value: sectionTotals.addonCost || 0 },
     { label: "Miscellaneous Total", value: sectionTotals.miscellaneous || 0 },
     { label: "Grand Total", value: grandTotal },
   ];
@@ -669,20 +736,30 @@ export default function ClothSalesCostSheetPage() {
                       <div className="py-8 text-center text-[13px] font-semibold text-slate-500">Loading cost estimation...</div>
                     </InfoCard>
                   ) : sectionConfigs.map((section) => (
-                    <CostSection
-                      key={section.key}
-                      title={section.title}
-                      dropdownLabel={section.title}
-                      draft={sectionDrafts[section.key]}
-                      rows={sections[section.key]}
-                      options={sectionDropdownOptions[section.key] || []}
-                      total={sectionTotals[section.key] || 0}
-                      onItemSelect={(itemId) => handleItemSelect(section.key, itemId)}
-                      onDraftChange={(field, value) => updateDraftRow(section.key, field, value)}
-                      onSubmitRow={() => submitSectionRow(section.key)}
-                      onEditRow={(rowId) => editSectionRow(section.key, rowId)}
-                      onRemoveRow={(rowId) => removeSectionRow(section.key, rowId)}
-                    />
+                    section.manualEntry ? (
+                      <SimpleAmountSection
+                        key={section.key}
+                        title={section.title}
+                        value={sections[section.key]?.[0]?.rate || ""}
+                        onChange={(event) => updateSimpleSectionAmount(section.key, event.target.value)}
+                      />
+                    ) : (
+                      <CostSection
+                        key={section.key}
+                        title={section.title}
+                        dropdownLabel={section.title}
+                        manualEntry={section.manualEntry}
+                        draft={sectionDrafts[section.key]}
+                        rows={sections[section.key]}
+                        options={sectionDropdownOptions[section.key] || []}
+                        total={sectionTotals[section.key] || 0}
+                        onItemSelect={(itemId) => handleItemSelect(section.key, itemId)}
+                        onDraftChange={(field, value) => updateDraftRow(section.key, field, value)}
+                        onSubmitRow={() => submitSectionRow(section.key)}
+                        onEditRow={(rowId) => editSectionRow(section.key, rowId)}
+                        onRemoveRow={(rowId) => removeSectionRow(section.key, rowId)}
+                      />
+                    )
                   ))}
 
                   <InfoCard>

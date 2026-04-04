@@ -10,6 +10,9 @@ urlpatterns = [
     path('dispatch-details/<int:pk>/', dispatch_detail_update_delete),
     path('quotations/', quotation_list_create),
     path('quotations/<int:pk>/', quotation_detail_update_delete),
+    path('quotations/<int:pk>/approval/', quotation_approval_update),
+    path('purchase-orders/', purchase_order_list_create),
+    path('purchase-orders/<int:pk>/', purchase_order_detail_update_delete),
     path('quotation-terms/', quotation_terms_list),
     path('view_quotation/<int:quotation_id>/', view_quotation, name='view_quotation'),
 
@@ -22,6 +25,7 @@ urlpatterns = [
     path('items/<int:pk>/', item_detail_update_delete, name='item_detail'),
     path('sales-services/', sales_service_list_create, name='sales_service_list_create'),
     path('sales-services/<int:pk>/', sales_service_detail_update_delete, name='sales_service_detail_update_delete'),
+    path('website-company-profile/', website_company_profile, name='website_company_profile'),
     path('cost-estimations/', cost_estimation_list_create, name='cost_estimation_list_create'),
     path('cost-estimations/<int:pk>/', cost_estimation_detail_update_delete, name='cost_estimation_detail_update_delete'),
     path('cost-estimations/<int:pk>/approval/', cost_estimation_approval_update, name='cost_estimation_approval_update'),

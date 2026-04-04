@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, Pencil, Plus, Send, Trash2 } from "lucide-react";
 import AppPageShell from "../../components/AppPageShell";
@@ -8,6 +8,8 @@ import { buildApiUrl } from "../../utils/api";
 import {
   getApprovalRecord,
   getOverallStatus,
+  isAnyStageDeclined,
+  isApprovalLocked,
 } from "../approvalWorkflow";
 
 export default function CostEstimationListPage() {
@@ -21,7 +23,7 @@ export default function CostEstimationListPage() {
     return token ? { Authorization: `Token ${token}` } : {};
   };
 
-  const fetchRows = async () => {
+  const fetchRows = useCallback(async () => {
     try {
       setLoading(true);
       setError("");
@@ -40,7 +42,7 @@ export default function CostEstimationListPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -50,7 +52,7 @@ export default function CostEstimationListPage() {
     }
 
     fetchRows();
-  }, [router]);
+  }, [fetchRows, router]);
 
   const handleDelete = async (id) => {
     if (!window.confirm("Delete this cost estimation?")) return;
@@ -146,6 +148,8 @@ export default function CostEstimationListPage() {
                                 const approvalRecord = getApprovalRecord(row.approval_workflow);
                                 const overallStatus = getOverallStatus(approvalRecord);
                                 const isApproved = overallStatus === "approved";
+                                const isLocked = isApprovalLocked(approvalRecord);
+                                const canSend = !approvalRecord.sentToHead || isAnyStageDeclined(approvalRecord);
 
                                 return (
                                   <>
@@ -183,36 +187,60 @@ export default function CostEstimationListPage() {
                                   <button
                                     type="button"
                                     onClick={() => handleSendToHead(row.id)}
+                                    disabled={!canSend}
                                     className={`flex h-7 w-7 items-center justify-center rounded-md border transition ${
-                                      approvalRecord.sentToHead
-                                        ? "border-emerald-200 bg-emerald-50 text-emerald-600"
-                                        : "border-violet-200 bg-violet-50 text-violet-600"
+                                      canSend
+                                        ? approvalRecord.sentToHead
+                                          ? "border-emerald-200 bg-emerald-50 text-emerald-600"
+                                          : "border-violet-200 bg-violet-50 text-violet-600"
+                                        : "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
                                     }`}
-                                    title={approvalRecord.sentToHead ? "Already sent to Head" : "Send to Head"}
+                                    title={
+                                      canSend
+                                        ? approvalRecord.sentToHead
+                                          ? "Send again for approval"
+                                          : "Send to Head"
+                                        : "Disabled until approval is declined"
+                                    }
                                   >
                                     <Send size={14} />
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => router.push(`/sales-services/cost-sheet/view/${row.id}`)}
-                                    className="flex h-7 w-7 items-center justify-center rounded-md border border-sky-200 bg-sky-50 text-sky-600 transition"
-                                    title="View details"
+                                    disabled={isLocked}
+                                    className={`flex h-7 w-7 items-center justify-center rounded-md border transition ${
+                                      isLocked
+                                        ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                                        : "border-sky-200 bg-sky-50 text-sky-600"
+                                    }`}
+                                    title={isLocked ? "Disabled while approval is pending" : "View details"}
                                   >
                                     <Eye size={14} />
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => router.push(`/sales-services/cost-sheet?editId=${row.id}`)}
-                                    className="flex h-7 w-7 items-center justify-center rounded-md border border-amber-200 bg-amber-50 text-amber-600 transition"
-                                    title="Update cost estimation"
+                                    disabled={isLocked}
+                                    className={`flex h-7 w-7 items-center justify-center rounded-md border transition ${
+                                      isLocked
+                                        ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                                        : "border-amber-200 bg-amber-50 text-amber-600"
+                                    }`}
+                                    title={isLocked ? "Disabled while approval is pending" : "Update cost estimation"}
                                   >
                                     <Pencil size={14} />
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => handleDelete(row.id)}
-                                    className="flex h-7 w-7 items-center justify-center rounded-md border border-rose-200 bg-rose-50 text-rose-600 transition"
-                                    title="Delete cost estimation"
+                                    disabled={isLocked}
+                                    className={`flex h-7 w-7 items-center justify-center rounded-md border transition ${
+                                      isLocked
+                                        ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                                        : "border-rose-200 bg-rose-50 text-rose-600"
+                                    }`}
+                                    title={isLocked ? "Disabled while approval is pending" : "Delete cost estimation"}
                                   >
                                     <Trash2 size={14} />
                                   </button>

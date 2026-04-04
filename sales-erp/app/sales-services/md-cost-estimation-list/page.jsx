@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Eye, Pencil, Plus, Trash2, X } from "lucide-react";
 import AppPageShell from "../../components/AppPageShell";
@@ -19,6 +19,7 @@ const quotationButtonClassName =
 export default function MdCostEstimationListPage() {
   const router = useRouter();
   const [rows, setRows] = useState([]);
+  const [quotationRows, setQuotationRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reviewRow, setReviewRow] = useState(null);
@@ -29,26 +30,34 @@ export default function MdCostEstimationListPage() {
     return token ? { Authorization: `Token ${token}` } : {};
   };
 
-  const fetchRows = async () => {
+  const fetchRows = useCallback(async () => {
     try {
       setLoading(true);
       setError("");
-      const response = await fetch(buildApiUrl("/api/cost-estimations/"), {
-        headers: getAuthHeaders(),
-      });
+      const [response, quotationResponse] = await Promise.all([
+        fetch(buildApiUrl("/api/cost-estimations/"), {
+          headers: getAuthHeaders(),
+        }),
+        fetch(buildApiUrl("/api/quotations/"), {
+          headers: getAuthHeaders(),
+        }),
+      ]);
+
       if (!response.ok) {
         setError("Failed to fetch cost estimations.");
         return;
       }
 
       const data = await response.json();
+      const quotationData = quotationResponse.ok ? await quotationResponse.json() : [];
       setRows(Array.isArray(data) ? data : []);
+      setQuotationRows(Array.isArray(quotationData) ? quotationData : []);
     } catch {
       setError("Network error while fetching cost estimations.");
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -58,7 +67,7 @@ export default function MdCostEstimationListPage() {
     }
 
     fetchRows();
-  }, [router]);
+  }, [fetchRows, router]);
 
   const handleDelete = async (id) => {
     if (!window.confirm("Delete this cost estimation?")) return;
@@ -123,6 +132,16 @@ export default function MdCostEstimationListPage() {
 
   const visibleRows = rows.filter((row) => getApprovalRecord(row.approval_workflow).sentToHead);
 
+  const openQuotationPreview = (row) => {
+    const linkedQuotation = quotationRows.find((quotation) => quotation.rfq_no === row.rfq_no);
+    if (!linkedQuotation?.id) {
+      window.alert("Quotation preview is not available for this record.");
+      return;
+    }
+
+    router.push(`/sales-services/quotation/preview/${linkedQuotation.id}`);
+  };
+
   const renderStatus = (approvalWorkflow) => {
     const record = getApprovalRecord(approvalWorkflow);
     return (
@@ -182,6 +201,7 @@ export default function MdCostEstimationListPage() {
                     const approvalRecord = getApprovalRecord(row.approval_workflow);
                     const isHeadApproved = approvalRecord.head.status === "approved";
                     const isMdApproved = approvalRecord.md.status === "approved";
+                    const isQuotationEnabled = isHeadApproved && isMdApproved;
 
                     return (
                     <tr key={row.id} className="align-top">
@@ -207,16 +227,23 @@ export default function MdCostEstimationListPage() {
                       </td>
                       <td className="border-b border-slate-100 px-4 py-3">
                         <div className="flex items-center gap-2">
-                          {isMdApproved ? (
-                            <button
-                              type="button"
-                              onClick={() => router.push(`/sales-services/quotation?estimationId=${row.id}`)}
-                              className={quotationButtonClassName}
-                              title="Open quotation"
-                            >
-                              QUOTATION
-                            </button>
-                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() => openQuotationPreview(row)}
+                            disabled={!isQuotationEnabled}
+                            className={`${quotationButtonClassName} ${
+                              isQuotationEnabled
+                                ? ""
+                                : "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                            }`}
+                            title={
+                              isQuotationEnabled
+                                ? "Open quotation preview"
+                                : "Head and MD approval required"
+                            }
+                          >
+                            QUOTATION
+                          </button>
                           <button
                             type="button"
                             onClick={() => openReviewModal(row)}
@@ -241,16 +268,26 @@ export default function MdCostEstimationListPage() {
                           <button
                             type="button"
                             onClick={() => router.push(`/sales-services/cost-sheet?editId=${row.id}`)}
-                            className="flex h-7 w-7 items-center justify-center rounded-md border border-amber-200 bg-amber-50 text-amber-600 transition"
-                            title="Update cost estimation"
+                            disabled={isMdApproved}
+                            className={`flex h-7 w-7 items-center justify-center rounded-md border transition ${
+                              isMdApproved
+                                ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                                : "border-amber-200 bg-amber-50 text-amber-600"
+                            }`}
+                            title={isMdApproved ? "Disabled after MD approval" : "Update cost estimation"}
                           >
                             <Pencil size={14} />
                           </button>
                           <button
                             type="button"
                             onClick={() => handleDelete(row.id)}
-                            className="flex h-7 w-7 items-center justify-center rounded-md border border-rose-200 bg-rose-50 text-rose-600 transition"
-                            title="Delete cost estimation"
+                            disabled={isMdApproved}
+                            className={`flex h-7 w-7 items-center justify-center rounded-md border transition ${
+                              isMdApproved
+                                ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                                : "border-rose-200 bg-rose-50 text-rose-600"
+                            }`}
+                            title={isMdApproved ? "Disabled after MD approval" : "Delete cost estimation"}
                           >
                             <Trash2 size={14} />
                           </button>

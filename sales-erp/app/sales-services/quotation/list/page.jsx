@@ -2,9 +2,18 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, List, Pencil, Plus, Trash2 } from "lucide-react";
+import { List, Pencil, Plus, Printer, Send, Trash2, User } from "lucide-react";
 import AppPageShell from "../../../components/AppPageShell";
 import { buildApiUrl } from "../../../utils/api";
+import {
+  getApprovalRecord,
+  getStageLabel,
+  isAnyStageDeclined,
+  isApprovalLocked,
+  isFullyApproved,
+} from "../../approvalWorkflow";
+
+const iconButtonClassName = "flex h-8 w-8 items-center justify-center rounded-md border transition";
 
 export default function QuotationListPage() {
   const router = useRouter();
@@ -16,6 +25,76 @@ export default function QuotationListPage() {
   const [editTarget, setEditTarget] = useState(null);
   const [estimationRows, setEstimationRows] = useState([]);
   const [selectedModification, setSelectedModification] = useState("terms");
+  const [clientDialogRow, setClientDialogRow] = useState(null);
+  const [clientDecision, setClientDecision] = useState("accepted");
+  const [clientRemarks, setClientRemarks] = useState("Client accepted quotation");
+  const [sendingRowId, setSendingRowId] = useState(null);
+  const [deletingRowId, setDeletingRowId] = useState(null);
+  const [savingClientRowId, setSavingClientRowId] = useState(null);
+  const [printingRowId, setPrintingRowId] = useState(null);
+
+  const getAuthHeaders = () => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    return token ? { Authorization: `Token ${token}` } : {};
+  };
+
+  const getRowApprovalRecord = (row) =>
+    getApprovalRecord(
+      row?.approval_workflow || {
+        sent_to_head: row?.sent_to_head,
+        head_status: row?.head_status,
+        head_comment: row?.head_comment,
+        md_status: row?.md_status,
+        md_comment: row?.md_comment,
+      }
+    );
+
+  const getNormalizedClientStatus = (row) => {
+    const status = String(row?.client_status || "").trim().toLowerCase();
+    const remarks = String(row?.client_response_remarks || "").trim().toLowerCase();
+
+    if (status.includes("reject") || remarks.includes("reject")) return "rejected";
+    if (status.includes("accept") || remarks.includes("accept")) return "accepted";
+    return "";
+  };
+
+  const buildQuotationUpdatePayload = (row, overrides = {}) => ({
+    customer_name: row?.customer_name || row?.customerName || "",
+    quotation_code: row?.quotation_code || "",
+    quotation_date: row?.quotation_date || null,
+    expiry_date: row?.expiry_date || null,
+    quote_validity: row?.quote_validity || "",
+    rfq_no: row?.rfq_no || "",
+    rfq_date: row?.rfq_date || null,
+    attention_name: row?.attention_name || "",
+    company_name: row?.company_name || "",
+    email: row?.email || "",
+    phone_no: row?.phone_no || "",
+    scope_no: row?.scope_no || "",
+    scope_name: row?.scope_name || "",
+    scope_specification: row?.scope_specification || "",
+    scope_remarks: row?.scope_remarks || "",
+    payment_terms: row?.payment_terms || "",
+    delivery_terms: row?.delivery_terms || "",
+    general_terms: row?.general_terms || "",
+    currency_country: row?.currency_country || row?.region || "",
+    currency_symbol: row?.currency_symbol || "Rs.",
+    conversion_rate: row?.conversion_rate ?? 1,
+    tax_rate: row?.tax_rate ?? 0,
+    decimal_places: row?.decimal_places ?? 2,
+    taxable_amount: row?.taxable_amount ?? 0,
+    tax_amount: row?.tax_amount ?? 0,
+    discount_amount: row?.discount_amount ?? 0,
+    subtotal: row?.subtotal ?? 0,
+    round_off: row?.round_off ?? 0,
+    net_amount: row?.net_amount ?? row?.total_net_amount ?? 0,
+    total_net_amount: row?.total_net_amount ?? row?.net_amount ?? 0,
+    region: row?.region || row?.currency_country || "",
+    items: Array.isArray(row?.items) ? row.items : [],
+    client_status: row?.client_status || "",
+    client_response_remarks: row?.client_response_remarks || "",
+    ...overrides,
+  });
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -28,8 +107,12 @@ export default function QuotationListPage() {
       try {
         setLoading(true);
         const [quotationResponse, estimationResponse] = await Promise.all([
-          fetch(buildApiUrl("/api/quotations/")),
-          fetch(buildApiUrl("/api/cost-estimations/")),
+          fetch(buildApiUrl("/api/quotations/"), {
+            headers: getAuthHeaders(),
+          }),
+          fetch(buildApiUrl("/api/cost-estimations/"), {
+            headers: getAuthHeaders(),
+          }),
         ]);
         const quotationData = quotationResponse.ok ? await quotationResponse.json() : [];
         const estimationData = estimationResponse.ok ? await estimationResponse.json() : [];
@@ -73,20 +156,24 @@ export default function QuotationListPage() {
       return;
     }
 
-    window.open(buildApiUrl(`/api/view_quotation/${id}/`), "_blank", "noopener,noreferrer");
+    router.push(`/sales-services/quotation/preview/${id}`);
   };
 
   const handleDelete = async (id) => {
     if (!window.confirm("Delete this quotation?")) return;
 
     try {
+      setDeletingRowId(id);
       const response = await fetch(buildApiUrl(`/api/quotations/${id}/`), {
         method: "DELETE",
+        headers: getAuthHeaders(),
       });
       if (!response.ok) return;
       setRows((prev) => prev.filter((row) => row.id !== id));
     } catch {
       return;
+    } finally {
+      setDeletingRowId(null);
     }
   };
 
@@ -97,6 +184,21 @@ export default function QuotationListPage() {
 
   const handleCloseEditModal = () => {
     setEditTarget(null);
+  };
+
+  const openClientDialog = (row) => {
+    const nextDecision = getNormalizedClientStatus(row) === "rejected" ? "rejected" : "accepted";
+    setClientDialogRow(row);
+    setClientDecision(nextDecision);
+    setClientRemarks(
+      row.client_response_remarks ||
+        (nextDecision === "accepted" ? "Client accepted quotation" : "Client rejected quotation")
+    );
+  };
+
+  const handleClientDecisionChange = (decision) => {
+    setClientDecision(decision);
+    setClientRemarks(decision === "accepted" ? "Client accepted quotation" : "Client rejected quotation");
   };
 
   const handleConfirmModification = () => {
@@ -128,22 +230,191 @@ export default function QuotationListPage() {
     handleCloseEditModal();
   };
 
-  const getQuotationApprovalStatus = (quotation) => {
-    const linkedEstimation = estimationRows.find((row) => row.rfq_no === quotation.rfq_no);
-    const headStatus = linkedEstimation?.approval_workflow?.head_status;
-    const mdStatus = linkedEstimation?.approval_workflow?.md_status;
-    return headStatus === "approved" && mdStatus === "approved" ? "Approved" : "Not Approved";
+  const handleSendForApproval = async (id) => {
+    try {
+      setSendingRowId(id);
+      const currentRow = rows.find((row) => row.id === id);
+      const response = await fetch(buildApiUrl(`/api/quotations/${id}/approval/`), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({ action: "send_to_head" }),
+      });
+
+      if (!response.ok) {
+        window.alert("Failed to send quotation for approval.");
+        return;
+      }
+
+      const approval = await response.json();
+      if (currentRow) {
+        await fetch(buildApiUrl(`/api/quotations/${id}/`), {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            ...getAuthHeaders(),
+          },
+          body: JSON.stringify(
+            buildQuotationUpdatePayload(currentRow, {
+              client_status: "",
+              client_response_remarks: "",
+            })
+          ),
+        }).catch(() => null);
+      }
+
+      setRows((prev) =>
+        prev.map((row) =>
+          row.id === id
+            ? {
+                ...row,
+                approval_workflow: approval,
+                client_status: "",
+                client_response_remarks: "",
+              }
+            : row
+        )
+      );
+    } catch {
+      window.alert("Network error while sending quotation for approval.");
+    } finally {
+      setSendingRowId(null);
+    }
   };
 
-  const getQuotationStatusClassName = (quotation) => {
-    const status = getQuotationApprovalStatus(quotation);
-    return status === "Approved"
-      ? "bg-emerald-500 text-white shadow-[0_8px_16px_rgba(16,185,129,0.28)]"
-      : "bg-amber-500 text-white shadow-[0_8px_16px_rgba(245,158,11,0.26)]";
+  const openPrintPreview = (id) => {
+    if (!id) {
+      window.alert("Quotation preview is not available.");
+      return;
+    }
+
+    setPrintingRowId(id);
+    window.open(buildApiUrl(`/api/view_quotation/${id}/`), "_blank", "noopener,noreferrer");
   };
+
+  const handleClientResponseSave = async () => {
+    if (!clientDialogRow?.id) return;
+
+    try {
+      setSavingClientRowId(clientDialogRow.id);
+      const responseRemarks =
+        clientRemarks.trim() ||
+        (clientDecision === "accepted"
+          ? "Client accepted quotation"
+          : "Client rejected quotation");
+      const response = await fetch(buildApiUrl(`/api/quotations/${clientDialogRow.id}/`), {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify(
+          buildQuotationUpdatePayload(clientDialogRow, {
+            client_status: clientDecision,
+            client_response_remarks: responseRemarks,
+          })
+        ),
+      });
+
+      if (!response.ok) {
+        window.alert("Failed to save client response.");
+        return;
+      }
+
+      const updatedRow = await response.json();
+      setRows((prev) =>
+        prev.map((row) =>
+          row.id === updatedRow.id
+            ? {
+                ...row,
+                client_status: updatedRow.client_status ?? clientDecision,
+                client_response_remarks: updatedRow.client_response_remarks ?? responseRemarks,
+              }
+            : row
+        )
+      );
+      setClientDialogRow(null);
+    } catch {
+      window.alert("Network error while saving client response.");
+    } finally {
+      setSavingClientRowId(null);
+    }
+  };
+
+  useEffect(() => {
+    if (printingRowId == null) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setPrintingRowId(null);
+    }, 1200);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [printingRowId]);
 
   return (
     <AppPageShell contentClassName="mx-auto w-full max-w-[1100px] px-3 py-2">
+      {clientDialogRow ? (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 px-4">
+          <div className="w-full max-w-[360px] rounded-[16px] border border-slate-200 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.18)]">
+            <div className="border-b border-slate-100 px-5 py-4">
+              <h2 className="text-[18px] font-bold text-slate-900">Client Response</h2>
+            </div>
+
+            <div className="space-y-4 px-5 py-5">
+              <label className="flex cursor-pointer items-center gap-3 rounded-[12px] border border-slate-200 px-4 py-3 transition hover:bg-slate-50">
+                <input
+                  type="radio"
+                  name="client-response"
+                  checked={clientDecision === "accepted"}
+                  onChange={() => handleClientDecisionChange("accepted")}
+                  className="h-4 w-4 accent-emerald-600"
+                />
+                <div className="text-[14px] font-medium text-slate-900">Client accepted quotation</div>
+              </label>
+
+              <label className="flex cursor-pointer items-center gap-3 rounded-[12px] border border-slate-200 px-4 py-3 transition hover:bg-slate-50">
+                <input
+                  type="radio"
+                  name="client-response"
+                  checked={clientDecision === "rejected"}
+                  onChange={() => handleClientDecisionChange("rejected")}
+                  className="h-4 w-4 accent-rose-600"
+                />
+                <div className="text-[14px] font-medium text-slate-900">Client rejected quotation</div>
+              </label>
+
+              <textarea
+                value={clientRemarks}
+                onChange={(event) => setClientRemarks(event.target.value)}
+                className="h-24 w-full rounded-[12px] border border-slate-300 bg-white px-3 py-2 text-[13px] text-slate-700 outline-none"
+                placeholder="Enter client remarks"
+              />
+
+              <div className="flex justify-end gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setClientDialogRow(null)}
+                  disabled={savingClientRowId === clientDialogRow.id}
+                  className="rounded-[10px] border border-slate-200 px-4 py-2 text-[12px] font-semibold text-slate-600 transition hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClientResponseSave}
+                  disabled={savingClientRowId === clientDialogRow.id}
+                  className="rounded-[10px] bg-sky-600 px-5 py-2 text-[12px] font-semibold text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-sky-300"
+                >
+                  {savingClientRowId === clientDialogRow.id ? "Saving..." : "Save"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {editTarget ? (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 px-4">
           <div className="w-full max-w-[360px] rounded-[16px] border border-slate-200 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.18)]">
@@ -199,7 +470,7 @@ export default function QuotationListPage() {
 
       <div className="mt-3 rounded-[20px] border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between">
-          <h1 className="text-[16px] font-bold text-slate-900">Review Quotation</h1>
+          <h1 className="text-[16px] font-bold text-slate-900">Quotation List</h1>
           <div className="flex gap-2">
             <button
               type="button"
@@ -286,6 +557,30 @@ export default function QuotationListPage() {
               ) : (
                 paginatedRows.map((row, index) => (
                   <tr key={row.id} className="border-b border-slate-100">
+                    {(() => {
+                      const approvalRecord = getRowApprovalRecord(row);
+                      const isApproved = isFullyApproved(approvalRecord);
+                      const normalizedClientStatus = getNormalizedClientStatus(row);
+                      const isClientRejected = normalizedClientStatus === "rejected";
+                      const isClientAccepted = normalizedClientStatus === "accepted";
+                      const isBusy =
+                        sendingRowId === row.id ||
+                        deletingRowId === row.id ||
+                        savingClientRowId === row.id ||
+                        printingRowId === row.id ||
+                        clientDialogRow?.id === row.id;
+                      const isLocked = isApprovalLocked(approvalRecord) && !isClientRejected;
+                      const canSend =
+                        !isBusy &&
+                        !isApproved &&
+                        (!approvalRecord.sentToHead || isAnyStageDeclined(approvalRecord) || isClientRejected);
+                      const showPrintAction = isApproved && !isClientRejected;
+                      const showClientAction = isApproved && !isClientAccepted && !isClientRejected;
+                      const disableSend = !canSend;
+                      const disableEditDelete = isBusy || isLocked || (isApproved && !isClientRejected);
+
+                      return (
+                        <>
                     <td className="border-r border-slate-100 p-3 text-[13px] text-black">
                       {(page - 1) * pageSize + index + 1}
                     </td>
@@ -298,38 +593,111 @@ export default function QuotationListPage() {
                     <td className="border-r border-slate-100 p-3 text-[13px] text-black">{row.attention_name || row.customer_name || "-"}</td>
                     <td className="border-r border-slate-100 p-3 text-[13px] text-black">{row.company_name || row.customer_name || "-"}</td>
                     <td className="border-r border-slate-100 p-3 text-[13px] text-black">
-                      <button
-                        type="button"
-                        className={`inline-flex rounded-full px-4 py-1 text-[10px] font-bold ${getQuotationStatusClassName(row)}`}
-                      >
-                        {getQuotationApprovalStatus(row).toUpperCase()}
-                      </button>
+                      <div className="space-y-2">
+                        <button
+                          type="button"
+                          className={`inline-flex rounded-full px-4 py-1 text-[10px] font-bold text-white shadow-[0_8px_16px_rgba(15,23,42,0.16)] ${
+                            isClientRejected ? "bg-rose-500" : isApproved ? "bg-emerald-500" : "bg-amber-500"
+                          }`}
+                        >
+                          {isClientRejected ? "REJECTED" : isApproved ? "APPROVED" : "NOT APPROVED"}
+                        </button>
+                        {approvalRecord.sentToHead ? (
+                          <p className="max-w-[220px] text-[10px] leading-4 text-sky-700">
+                            Head: {getStageLabel(approvalRecord.head.status, "WAITING")}
+                            {" | "}
+                            MD: {getStageLabel(approvalRecord.md.status, "WAITING")}
+                          </p>
+                        ) : null}
+                        {row.remarks ? (
+                          <p className="max-w-[220px] text-[10px] leading-4 text-rose-600">
+                            Remarks: {row.remarks}
+                          </p>
+                        ) : null}
+                        {row.client_response_remarks && (isApproved || isClientRejected) ? (
+                          <p className={`max-w-[220px] text-[10px] leading-4 ${
+                            normalizedClientStatus === "accepted" ? "text-emerald-600" : "text-rose-600"
+                          }`}>
+                            Client: {row.client_response_remarks}
+                          </p>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="border-r border-slate-100 p-3 text-right text-[13px] font-semibold text-black">
                       {row.currency_symbol || "Rs."} {Number(row.total_net_amount || row.net_amount || 0).toFixed(row.decimal_places || 2)}
                     </td>
                     <td className="p-3">
                       <div className="flex items-center justify-center gap-3">
-                        <button
-                          type="button"
-                          onClick={() => openPdfPreview(row.id)}
-                          className="text-sky-600"
-                          title="Preview quotation"
-                        >
-                          <Eye size={16} />
-                        </button>
+                        {showPrintAction ? (
+                          <button
+                            type="button"
+                            onClick={() => openPrintPreview(row.id)}
+                            disabled={isBusy}
+                            className={`${iconButtonClassName} ${
+                              isBusy
+                                ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                                : "border-emerald-200 bg-emerald-50 text-emerald-600"
+                            }`}
+                            title="Print quotation"
+                          >
+                            <Printer size={16} />
+                          </button>
+                        ) : null}
+                        {showClientAction ? (
+                          <button
+                            type="button"
+                            onClick={() => openClientDialog(row)}
+                            disabled={isBusy}
+                            className={`${iconButtonClassName} ${
+                              isBusy
+                                ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                                : "border-sky-200 bg-sky-50 text-sky-600"
+                            }`}
+                            title="Client response"
+                          >
+                            <User size={16} />
+                          </button>
+                        ) : null}
+                        {!showPrintAction && !showClientAction ? (
+                          <button
+                            type="button"
+                            onClick={() => handleSendForApproval(row.id)}
+                            disabled={disableSend}
+                            className={`${iconButtonClassName} ${
+                              !disableSend
+                                ? "border-violet-200 bg-violet-50 text-violet-600"
+                                : "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                            }`}
+                            title={!disableSend ? "Send quotation for approval" : "Already sent for approval"}
+                          >
+                            <Send size={16} />
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           onClick={() => handleOpenEditModal(row)}
-                          className="text-amber-600"
+                          disabled={disableEditDelete}
+                          className={`${
+                            disableEditDelete ? "cursor-not-allowed text-slate-300" : "text-amber-600"
+                          }`}
                         >
                           <Pencil size={16} />
                         </button>
-                        <button type="button" onClick={() => handleDelete(row.id)} className="text-rose-600">
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(row.id)}
+                          disabled={disableEditDelete}
+                          className={`${
+                            disableEditDelete ? "cursor-not-allowed text-slate-300" : "text-rose-600"
+                          }`}
+                        >
                           <Trash2 size={16} />
                         </button>
                       </div>
                     </td>
+                        </>
+                      );
+                    })()}
                   </tr>
                 ))
               )}

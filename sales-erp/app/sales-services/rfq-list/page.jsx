@@ -6,6 +6,7 @@ import { Eye, Pencil, Plus, Trash2 } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 import AppPageShell from "../../components/AppPageShell";
 import { buildApiUrl } from "../../utils/api";
+import { getApprovalRecord, isFullyApproved } from "../approvalWorkflow";
 
 const actionButtonClassName =
   "flex h-7 w-7 items-center justify-center rounded-md border text-[12px] transition";
@@ -17,6 +18,7 @@ function formatDate(value) {
 export default function RfqListPage() {
   const router = useRouter();
   const [rows, setRows] = useState([]);
+  const [estimationRows, setEstimationRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -29,15 +31,22 @@ export default function RfqListPage() {
     try {
       setLoading(true);
       setError("");
-      const response = await fetch(buildApiUrl("/api/sales-services/"), {
-        headers: getAuthHeaders(),
-      });
+      const [response, estimationResponse] = await Promise.all([
+        fetch(buildApiUrl("/api/sales-services/"), {
+          headers: getAuthHeaders(),
+        }),
+        fetch(buildApiUrl("/api/cost-estimations/"), {
+          headers: getAuthHeaders(),
+        }),
+      ]);
       if (!response.ok) {
         setError("Failed to fetch RFQ records.");
         return;
       }
       const data = await response.json();
+      const estimationData = estimationResponse.ok ? await estimationResponse.json() : [];
       setRows(Array.isArray(data) ? data : []);
+      setEstimationRows(Array.isArray(estimationData) ? estimationData : []);
     } catch {
       setError("Network error while fetching RFQ records.");
     } finally {
@@ -126,7 +135,11 @@ export default function RfqListPage() {
                           </tr>
                         </thead>
                         <tbody className="bg-white">
-                          {rows.map((row) => (
+                          {rows.map((row) => {
+                            const linkedEstimation = estimationRows.find((estimation) => estimation.rfq_no === row.rfq_no);
+                            const isLocked = isFullyApproved(getApprovalRecord(linkedEstimation?.approval_workflow));
+
+                            return (
                             <tr key={row.id} className="align-top">
                               <td className="border-b border-slate-100 px-4 py-3">
                                 <p className="font-semibold text-slate-900">{row.rfq_no || "-"}</p>
@@ -158,31 +171,47 @@ export default function RfqListPage() {
                                   <button
                                     type="button"
                                     onClick={() => handlePreview(row.email_attachment)}
-                                    className={`${actionButtonClassName} border-sky-200 bg-sky-50 text-sky-600`}
-                                    title="Preview attachment"
+                                    disabled={isLocked}
+                                    className={`${actionButtonClassName} ${
+                                      isLocked
+                                        ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                                        : "border-sky-200 bg-sky-50 text-sky-600"
+                                    }`}
+                                    title={isLocked ? "Disabled after head and MD approval" : "Preview attachment"}
                                   >
                                     <Eye size={14} />
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => router.push(`/sales-services/rfq?editId=${row.id}`)}
-                                    className={`${actionButtonClassName} border-blue-200 bg-blue-50 text-blue-600`}
-                                    title="Edit RFQ"
+                                    disabled={isLocked}
+                                    className={`${actionButtonClassName} ${
+                                      isLocked
+                                        ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                                        : "border-blue-200 bg-blue-50 text-blue-600"
+                                    }`}
+                                    title={isLocked ? "Disabled after head and MD approval" : "Edit RFQ"}
                                   >
                                     <Pencil size={14} />
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => handleDelete(row.id)}
-                                    className={`${actionButtonClassName} border-rose-200 bg-rose-50 text-rose-600`}
-                                    title="Delete RFQ"
+                                    disabled={isLocked}
+                                    className={`${actionButtonClassName} ${
+                                      isLocked
+                                        ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                                        : "border-rose-200 bg-rose-50 text-rose-600"
+                                    }`}
+                                    title={isLocked ? "Disabled after head and MD approval" : "Delete RFQ"}
                                   >
                                     <Trash2 size={14} />
                                   </button>
                                 </div>
                               </td>
                             </tr>
-                          ))}
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>

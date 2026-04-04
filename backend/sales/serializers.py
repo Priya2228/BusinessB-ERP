@@ -1,4 +1,5 @@
 from decimal import Decimal, ROUND_HALF_UP
+import json
 from rest_framework import serializers
 from inventory.services import get_tax_details, get_tax_rate, normalize_region
 from .models import (
@@ -6,10 +7,12 @@ from .models import (
     Dispatchdetails,
     Quotation,
     QuotationItem,
+    PurchaseOrder,
     Item,
     SalesServiceRequest,
     CostEstimation,
     CostEstimationApproval,
+    QuotationApproval,
     RawMaterialOption,
     ProductionCostOption,
     AddonCostOption,
@@ -35,6 +38,21 @@ def generate_unique_quotation_code():
             highest_number = max(highest_number, int(suffix))
 
     return f"QU{highest_number + 1:03d}"
+
+
+def generate_unique_purchase_order_no():
+    existing_codes = PurchaseOrder.objects.values_list("po_no", flat=True)
+    highest_number = 0
+
+    for code in existing_codes:
+        if not code:
+            continue
+        normalized_code = str(code).strip().upper()
+        digits = "".join(character for character in normalized_code if character.isdigit())
+        if digits.isdigit():
+            highest_number = max(highest_number, int(digits))
+
+    return f"PO{highest_number + 1:03d}"
 
 
 def resolve_item_category(validated_data):
@@ -124,6 +142,7 @@ class QuotationItemSerializer(serializers.ModelSerializer):
 class QuotationSerializer(serializers.ModelSerializer):
     items = QuotationItemSerializer(many=True, required=False)
     region = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    approval_workflow = serializers.SerializerMethodField()
 
     class Meta:
         model = Quotation
@@ -148,6 +167,7 @@ class QuotationSerializer(serializers.ModelSerializer):
             validated_data["revise_count"] = int(last_revision or 0) + 1
 
         quotation = Quotation.objects.create(**validated_data)
+        QuotationApproval.objects.get_or_create(quotation=quotation)
 
         for item_data in items_data:
             item_data.pop("quotation", None)
@@ -179,6 +199,45 @@ class QuotationSerializer(serializers.ModelSerializer):
             instance.save()
 
         return instance
+
+    def get_approval_workflow(self, obj):
+        approval, _ = QuotationApproval.objects.get_or_create(quotation=obj)
+        return CostEstimationApprovalSerializer(approval).data
+
+
+class PurchaseOrderSerializer(serializers.ModelSerializer):
+    file_attachment = serializers.FileField(required=False, allow_null=True)
+
+    class Meta:
+        model = PurchaseOrder
+        fields = "__all__"
+
+    def create(self, validated_data):
+        po_no = (validated_data.get("po_no") or "").strip()
+        if not po_no or PurchaseOrder.objects.filter(po_no=po_no).exists():
+            validated_data["po_no"] = generate_unique_purchase_order_no()
+        return super().create(validated_data)
+
+    def validate_scope_rows(self, value):
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                raise serializers.ValidationError("Scope rows must be valid JSON.")
+            if not isinstance(parsed, list):
+                raise serializers.ValidationError("Scope rows must be a list.")
+            return parsed
+        return value
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if instance.file_attachment:
+            request = self.context.get("request")
+            attachment_url = instance.file_attachment.url
+            data["file_attachment"] = (
+                request.build_absolute_uri(attachment_url) if request is not None else attachment_url
+            )
+        return data
 
 class ItemSerializer(serializers.ModelSerializer):
     item_image = serializers.ImageField(required=False, allow_null=True)

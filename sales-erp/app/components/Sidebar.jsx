@@ -14,6 +14,7 @@ import {
   Monitor,
   Settings,
   ShoppingBag,
+  ShoppingCart,
   SlidersHorizontal,
   User,
   Briefcase,
@@ -26,6 +27,7 @@ export default function Sidebar() {
   const menuItems = [
     { name: "Dashboard", icon: <LayoutGrid size={20} />, href: "/Dashboard" },
     { name: "Sales", icon: <ShoppingBag size={20} />, href: "/sales" },
+    { name: "Purchase", icon: <ShoppingCart size={20} />, href: "/purchase" },
     { name: "Master", icon: <SlidersHorizontal size={20} />, href: "/master" },
     { name: "Stock", icon: <Boxes size={20} />, href: "/stock" },
     { name: "Sales & Services", icon: <Briefcase size={20} />, href: "/sales-services" },
@@ -34,10 +36,10 @@ export default function Sidebar() {
   return (
     <div className="sticky top-0 flex h-screen w-[225px] flex-col bg-white p-6 shadow-sm">
       <div className="mb-10 flex px-2">
-        <Image src="/logo.png" alt="Business B Intelligence" width={180} height={54} priority />
+        <Image src="/majesticlogo.png" alt="Majestic" width={180} height={54} priority />
       </div>
 
-      <nav className="flex-1 overflow-y-auto">
+      <nav className="sidebar-scroll-hidden flex-1 overflow-y-auto">
         <ul className="space-y-6">
           {menuItems.map((item) => {
             const isActive =

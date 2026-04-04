@@ -6,6 +6,7 @@ from .models import (
     CostEstimationApproval,
     MiscellaneousOption,
     PackagingLogisticsOption,
+    PurchaseOrder,
     ProductionCostOption,
     RawMaterialOption,
     SalesServiceRequest,
@@ -32,6 +33,21 @@ class CostEstimationApprovalAdmin(admin.ModelAdmin):
     list_display = ("cost_estimation", "sent_to_head", "head_status", "md_status", "updated_at")
     search_fields = ("cost_estimation__estimation_no", "cost_estimation__company_name", "cost_estimation__client_name")
     list_filter = ("sent_to_head", "head_status", "md_status", "updated_at")
+
+
+@admin.register(PurchaseOrder)
+class PurchaseOrderAdmin(admin.ModelAdmin):
+    list_display = (
+        "po_no",
+        "quotation_no",
+        "cost_estimation_no",
+        "po_date",
+        "po_received_date",
+        "expected_delivery_date",
+        "created_at",
+    )
+    search_fields = ("po_no", "quotation_no", "cost_estimation_no", "rfq_no", "attention", "email", "phone_number")
+    list_filter = ("po_date", "po_received_date", "expected_delivery_date", "created_at")
 
 
 class CostOptionAdmin(admin.ModelAdmin):

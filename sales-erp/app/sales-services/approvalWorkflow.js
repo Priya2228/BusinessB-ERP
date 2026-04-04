@@ -35,6 +35,15 @@ export const getStageBadgeClass = (status) => {
 };
 
 export const getOverallStatus = (record) => {
-  if (record?.md?.status === "approved") return "approved";
+  if (record?.head?.status === "approved" && record?.md?.status === "approved") return "approved";
   return "not_approved";
 };
+
+export const isFullyApproved = (record) =>
+  record?.head?.status === "approved" && record?.md?.status === "approved";
+
+export const isAnyStageDeclined = (record) =>
+  record?.head?.status === "declined" || record?.md?.status === "declined";
+
+export const isApprovalLocked = (record) =>
+  Boolean(record?.sentToHead) && !isAnyStageDeclined(record);
