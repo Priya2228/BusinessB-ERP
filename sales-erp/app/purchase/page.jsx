@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { List } from "lucide-react";
-import toast from "react-hot-toast";
+import toast, { Toaster } from "react-hot-toast";
 import AppPageShell from "../components/AppPageShell";
 import { buildApiUrl } from "../utils/api";
 
@@ -215,7 +215,8 @@ export default function PurchaseOrderPage() {
   };
 
   return (
-    <AppPageShell contentClassName="mx-auto w-full max-w-[1100px] px-3 py-2">
+    <AppPageShell contentClassName="mx-auto w-full max-w-[1240px] px-3 py-2">
+      <Toaster position="top-right" />
       <div className="mt-3 rounded-[20px] border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between">
           <h1 className="text-[16px] font-bold text-slate-900">Purchase Order</h1>

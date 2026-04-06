@@ -7,6 +7,7 @@ import toast, { Toaster } from "react-hot-toast";
 import AppPageShell from "../../components/AppPageShell";
 import { buildApiUrl } from "../../utils/api";
 import { getApprovalRecord, isFullyApproved } from "../approvalWorkflow";
+import { canCreateRfq, canManageRfq, getStoredAuthState } from "../../utils/rbac";
 
 const actionButtonClassName =
   "flex h-7 w-7 items-center justify-center rounded-md border text-[12px] transition";
@@ -21,6 +22,7 @@ export default function RfqListPage() {
   const [estimationRows, setEstimationRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [authRole, setAuthRole] = useState("");
 
   const getAuthHeaders = () => {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -61,6 +63,7 @@ export default function RfqListPage() {
       return;
     }
 
+    setAuthRole(getStoredAuthState()?.role || "");
     fetchRows();
   }, [fetchRows, router]);
 
@@ -106,13 +109,15 @@ export default function RfqListPage() {
                     <h1 className="text-[16px] font-bold text-slate-900">Request for quotation List</h1>
                 
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => router.push("/sales-services/rfq")}
-                    className="flex h-7 w-7 items-center justify-center rounded-md border border-green-500 bg-green-50 text-green-600"
-                  >
-                    <Plus size={16} />
-                  </button>
+                  {canCreateRfq(authRole) ? (
+                    <button
+                      type="button"
+                      onClick={() => router.push("/sales-services/rfq")}
+                      className="flex h-7 w-7 items-center justify-center rounded-md border border-green-500 bg-green-50 text-green-600"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  ) : null}
                 </div>
 
                 <div className="mt-4 overflow-hidden rounded-[14px] border border-slate-200">
@@ -138,6 +143,7 @@ export default function RfqListPage() {
                           {rows.map((row) => {
                             const linkedEstimation = estimationRows.find((estimation) => estimation.rfq_no === row.rfq_no);
                             const isLocked = isFullyApproved(getApprovalRecord(linkedEstimation?.approval_workflow));
+                            const canManageRow = canManageRfq(authRole);
 
                             return (
                             <tr key={row.id} className="align-top">
@@ -181,32 +187,36 @@ export default function RfqListPage() {
                                   >
                                     <Eye size={14} />
                                   </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => router.push(`/sales-services/rfq?editId=${row.id}`)}
-                                    disabled={isLocked}
-                                    className={`${actionButtonClassName} ${
-                                      isLocked
-                                        ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
-                                        : "border-blue-200 bg-blue-50 text-blue-600"
-                                    }`}
-                                    title={isLocked ? "Disabled after head and MD approval" : "Edit RFQ"}
-                                  >
-                                    <Pencil size={14} />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDelete(row.id)}
-                                    disabled={isLocked}
-                                    className={`${actionButtonClassName} ${
-                                      isLocked
-                                        ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
-                                        : "border-rose-200 bg-rose-50 text-rose-600"
-                                    }`}
-                                    title={isLocked ? "Disabled after head and MD approval" : "Delete RFQ"}
-                                  >
-                                    <Trash2 size={14} />
-                                  </button>
+                                  {canManageRow ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => router.push(`/sales-services/rfq?editId=${row.id}`)}
+                                        disabled={isLocked}
+                                        className={`${actionButtonClassName} ${
+                                          isLocked
+                                            ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                                            : "border-blue-200 bg-blue-50 text-blue-600"
+                                        }`}
+                                        title={isLocked ? "Disabled after head and MD approval" : "Edit RFQ"}
+                                      >
+                                        <Pencil size={14} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDelete(row.id)}
+                                        disabled={isLocked}
+                                        className={`${actionButtonClassName} ${
+                                          isLocked
+                                            ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                                            : "border-rose-200 bg-rose-50 text-rose-600"
+                                        }`}
+                                        title={isLocked ? "Disabled after head and MD approval" : "Delete RFQ"}
+                                      >
+                                        <Trash2 size={14} />
+                                      </button>
+                                    </>
+                                  ) : null}
                                 </div>
                               </td>
                             </tr>

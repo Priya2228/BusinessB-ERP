@@ -322,7 +322,7 @@ doc.setFont("helvetica", "bold");
 
   return (
     <AppPageShell
-      contentClassName="mx-auto w-full max-w-[1100px] px-3 py-2"
+      contentClassName="mx-auto w-full max-w-[1240px] px-2 py-2"
       contentWrapperClassName="mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
     >
       <Toaster position="top-right" />
@@ -335,9 +335,7 @@ doc.setFont("helvetica", "bold");
               <button onClick={() => router.push("/sales")} className="p-2 border border-emerald-500 text-emerald-600 rounded-lg hover:bg-emerald-50">
                 <Plus size={20} />
               </button>
-              <button className="flex h-9 w-9 items-center justify-center rounded-[8px] border border-[#3b82f6] bg-[#eff6ff] text-[#2563eb]">
-                <List size={18} />
-              </button>
+             
             </div>
           </div>
 

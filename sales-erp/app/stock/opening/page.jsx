@@ -220,8 +220,7 @@ export default function OpeningStockPage() {
 
   return (
     <AppPageShell
-      contentClassName="mx-auto w-full max-w-[1100px] px-3 py-2"
-      contentWrapperClassName="mt-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+      contentClassName="mx-auto w-full max-w-[1240px] px-2 py-2"
     >
           {toast ? (
             <div className={`fixed right-5 top-5 z-[100] flex items-center gap-3 rounded-lg px-5 py-3 text-white shadow-2xl ${toast.type === "success" ? "bg-emerald-500" : "bg-red-500"}`}>
@@ -231,7 +230,7 @@ export default function OpeningStockPage() {
               </button>
             </div>
           ) : null}
-            <div className="rounded-[24px] border border-slate-300 bg-white px-5 py-5 shadow-[0_4px_18px_rgba(15,23,42,0.05)]">
+            <div className="mt-3 rounded-[24px] border border-slate-300 bg-white px-5 py-5 shadow-[0_4px_18px_rgba(15,23,42,0.05)]">
               <div className="flex items-start justify-between">
                 <h1 className="text-[17px] font-bold text-slate-900">New Opening</h1>
 

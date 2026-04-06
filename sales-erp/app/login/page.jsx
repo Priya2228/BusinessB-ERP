@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { buildApiUrl } from "../utils/api";
+import { getDefaultRouteForRole, getStoredAuthState, persistAuthState } from "../utils/rbac";
 import styles from "./page.module.css";
 
 export default function LoginPage() {
@@ -17,9 +18,9 @@ export default function LoginPage() {
   const router = useRouter();
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (token) {
-      router.push("/Dashboard");
+    const authState = getStoredAuthState();
+    if (authState?.token) {
+      router.push(getDefaultRouteForRole(authState.role));
     }
   }, [router]);
 
@@ -48,12 +49,16 @@ export default function LoginPage() {
       const data = await response.json();
 
       if (response.ok && data.token) {
-        // 1. Save the secret token
-        localStorage.setItem("token", data.token);
-        localStorage.setItem("username", data.username); // Optional: to show "Welcome admin"
+        persistAuthState({
+          token: data.token,
+          username: data.username,
+          role: data.role,
+          designation: data.designation,
+          department: data.department,
+        });
         
         // 2. ONLY navigate now that we have proof of login
-        router.push("/Dashboard"); 
+        router.push(getDefaultRouteForRole(data.role)); 
       } else {
         // Stay on page and show error if credentials fail
         setError(data.detail || "Invalid login name or password");

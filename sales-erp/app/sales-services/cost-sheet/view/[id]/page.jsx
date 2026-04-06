@@ -121,7 +121,7 @@ export default function CostEstimationViewPage() {
 
   return (
     <AppPageShell
-      contentClassName="mx-auto w-full max-w-[1100px] px-3 py-2"
+      contentClassName="mx-auto w-full max-w-[1240px] px-3 py-2"
     >
             <div className="mt-3 rounded-[24px] border border-slate-200 bg-white px-5 py-5 shadow-[0_4px_18px_rgba(15,23,42,0.05)]">
               <div className="mx-auto max-w-[1180px]">

@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { List, X } from "lucide-react";
 import AppPageShell from "../components/AppPageShell";
 import { buildApiUrl } from "../utils/api";
+import { canCreateRfq, canManageRfq, getStoredAuthState } from "../utils/rbac";
 
 const ENQUIRY_MODES = ["Email", "Phone", "Verbal"];
 
@@ -42,6 +43,9 @@ const createInitialForm = () => ({
   planStartDate: "",
   expectedDeadline: "",
 });
+
+const createClientOptionKey = (row = {}) =>
+  [row.client_name || "", row.company_name || "", row.client_location || ""].join("||");
 
 const inputClassName =
   "h-[42px] w-full rounded-[12px] border border-slate-300 bg-white px-4 text-[13px] text-slate-800 outline-none transition focus:border-sky-400";
@@ -93,8 +97,11 @@ function SelectField({ label, name, value, onChange, options, error }) {
       >
         <option value="">Select {label}</option>
         {options.map((option) => (
-          <option key={option} value={option}>
-            {option}
+          <option
+            key={typeof option === "string" ? option : option.value}
+            value={typeof option === "string" ? option : option.value}
+          >
+            {typeof option === "string" ? option : option.label}
           </option>
         ))}
       </select>
@@ -103,41 +110,45 @@ function SelectField({ label, name, value, onChange, options, error }) {
   );
 }
 
-function ServiceScopeField({ options, values, scopeValue, onToggle, onScopeChange, error }) {
+function ServiceScopeField({
+  serviceOptions,
+  descriptionOptions,
+  serviceValue,
+  descriptionValue,
+  remarksValue,
+  onChange,
+  error,
+}) {
   return (
     <div className="rounded-[18px] border border-slate-200 bg-white p-5">
-      <h3 className="text-[14px] font-bold text-slate-900">Service Details</h3>
-      <div className="mt-5">
-        <p className="text-[13px] font-medium text-slate-800">Marine related service</p>
-        <div className={`mt-3 rounded-[12px] ${error ? "border border-red-400 bg-red-50 p-4" : ""}`}>
-          <div className="grid gap-x-10 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
-            {options.map((option) => {
-              const checked = values.includes(option);
-              return (
-                <label key={option} className="flex items-start gap-3 text-[13px] text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => onToggle(option)}
-                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-violet-500 focus:ring-violet-400"
-                  />
-                  <span>{option}</span>
-                </label>
-              );
-            })}
-          </div>
-        </div>
-        {error ? <p className="mt-1 text-[11px] font-medium text-red-500">{error}</p> : null}
+      <div className="grid gap-4 md:grid-cols-2">
+        <SelectField
+          label="Service Details"
+          name="serviceCategory"
+          value={serviceValue}
+          onChange={onChange}
+          options={serviceOptions}
+          error={error}
+        />
+        <SelectField
+          label="Service Description"
+          name="fabricSpecs"
+          value={descriptionValue}
+          onChange={onChange}
+          options={descriptionOptions}
+          error={error}
+        />
       </div>
 
       <div className="mt-6">
-        <label className={labelClassName}>Scope area</label>
+        <label className={labelClassName}>Remarks</label>
         <textarea
-          name="fabricSpecs"
-          value={scopeValue}
-          onChange={onScopeChange}
+          name="sizeBreakdown"
+          value={remarksValue}
+          onChange={onChange}
           rows={5}
-          className={`min-h-[138px] w-full rounded-[10px] border bg-white p-3 text-[13px] text-slate-800 outline-none transition focus:border-cyan-400 ${error ? "border-red-400 bg-red-50" : "border-slate-300"}`}
+          className="min-h-[138px] w-full rounded-[10px] border border-slate-300 bg-white p-3 text-[13px] text-slate-800 outline-none transition focus:border-cyan-400"
+          placeholder="Add remarks"
         />
       </div>
     </div>
@@ -185,12 +196,30 @@ export default function RfqForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingRecord, setIsLoadingRecord] = useState(Boolean(editId));
   const [serviceCategoryOptions, setServiceCategoryOptions] = useState([]);
+  const [serviceDescriptionOptions, setServiceDescriptionOptions] = useState([]);
+  const [clientOptions, setClientOptions] = useState([]);
+  const [authRole, setAuthRole] = useState("");
   const isEmailMode = formData.enquiryMode === "Email";
   const isPhoneMode = formData.enquiryMode === "Phone";
   const isVerbalMode = formData.enquiryMode === "Verbal";
-  const selectedMarineServices = formData.serviceCategory
-    ? formData.serviceCategory.split(",").map((item) => item.trim()).filter(Boolean)
-    : [];
+
+  const clientSelectOptions = useMemo(
+    () =>
+      clientOptions.map((option) => ({
+        value: createClientOptionKey(option),
+        label: [option.client_name, option.company_name].filter(Boolean).join(" - ") || option.client_name || option.company_name || "Client",
+      })),
+    [clientOptions]
+  );
+
+  const selectedClientKey = useMemo(() => {
+    const key = createClientOptionKey({
+      client_name: formData.clientName,
+      company_name: formData.companyName,
+      client_location: formData.clientLocation,
+    });
+    return key === "||||" ? "" : key;
+  }, [formData.clientName, formData.companyName, formData.clientLocation]);
 
   const getAuthHeaders = () => {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -231,48 +260,68 @@ export default function RfqForm() {
     const token = localStorage.getItem("token");
     if (!token) {
       router.push("/login");
+      return;
+    }
+    const nextRole = getStoredAuthState()?.role || "";
+    setAuthRole(nextRole);
+
+    if (editId && !canManageRfq(nextRole)) {
+      router.push("/sales-services/rfq-list");
+      return;
+    }
+
+    if (!editId && !canCreateRfq(nextRole)) {
+      router.push("/sales-services/rfq-list");
     }
   }, [router]);
 
   useEffect(() => {
-    const loadWebsiteProfile = async () => {
+    const loadFormOptions = async () => {
       try {
-        const response = await fetch(buildApiUrl("/api/website-company-profile/"), {
-          headers: getAuthHeaders(),
-        });
-        if (!response.ok) {
-          return;
-        }
+        const [profileResponse, clientsResponse] = await Promise.all([
+          fetch(buildApiUrl("/api/website-company-profile/"), {
+            headers: getAuthHeaders(),
+          }),
+          fetch(buildApiUrl("/api/sales-services/"), {
+            headers: getAuthHeaders(),
+          }),
+        ]);
 
-        const profile = await response.json();
+        const profile = profileResponse.ok ? await profileResponse.json() : null;
         const nextServiceCategories = Array.isArray(profile?.service_categories)
           ? profile.service_categories.filter(Boolean)
           : [];
+        const nextServiceDescriptions = Array.isArray(profile?.brief_services)
+          ? profile.brief_services.filter(Boolean)
+          : [];
+        const salesServiceRows = clientsResponse.ok ? await clientsResponse.json() : [];
+        const uniqueClientMap = new Map();
+
+        (Array.isArray(salesServiceRows) ? salesServiceRows : []).forEach((row) => {
+          const key = createClientOptionKey(row);
+          if (!key.replace(/\|/g, "").trim() || uniqueClientMap.has(key)) {
+            return;
+          }
+          uniqueClientMap.set(key, {
+            client_name: row.client_name || "",
+            company_name: row.company_name || "",
+            client_location: row.client_location || "",
+            phone_no: row.phone_no || "",
+            email: row.email || "",
+          });
+        });
+
         setServiceCategoryOptions(nextServiceCategories);
-
-        if (editId) {
-          return;
-        }
-
-        setFormData((prev) => ({
-          ...prev,
-          clientName: prev.clientName || profile?.client_name || "",
-          companyName: prev.companyName || profile?.company_name || "",
-          clientLocation: prev.clientLocation || profile?.client_location || "",
-          phoneNo: prev.phoneNo || profile?.phone_no || "",
-          email: prev.email || profile?.email || "",
-          serviceCategory: prev.serviceCategory || "",
-          projectTitle: prev.projectTitle || "",
-          fabricSpecs: prev.fabricSpecs || "",
-          scopeOfWork:
-            prev.scopeOfWork || (Array.isArray(profile?.brief_services) ? profile.brief_services.join("\n") : ""),
-        }));
+        setServiceDescriptionOptions(nextServiceDescriptions);
+        setClientOptions(Array.from(uniqueClientMap.values()));
       } catch {
         setServiceCategoryOptions([]);
+        setServiceDescriptionOptions([]);
+        setClientOptions([]);
       }
     };
 
-    loadWebsiteProfile();
+    loadFormOptions();
   }, [editId]);
 
   useEffect(() => {
@@ -347,6 +396,10 @@ export default function RfqForm() {
 
       return {
         ...prev,
+        projectTitle:
+          name === "serviceCategory" && (!prev.projectTitle || prev.projectTitle === prev.serviceCategory)
+            ? value
+            : prev.projectTitle,
         [name]:
           type === "file"
             ? files?.[0] || null
@@ -357,35 +410,6 @@ export default function RfqForm() {
     });
 
     setErrors((prev) => ({ ...prev, [name]: "" }));
-  };
-
-  const handleMarineServiceToggle = (serviceName) => {
-    setFormData((prev) => {
-      const currentSelections = prev.serviceCategory
-        ? prev.serviceCategory.split(",").map((item) => item.trim()).filter(Boolean)
-        : [];
-      const nextSelections = currentSelections.includes(serviceName)
-        ? currentSelections.filter((item) => item !== serviceName)
-        : [...currentSelections, serviceName];
-      const previousAutoScope = currentSelections.join("\n");
-      const nextAutoScope = nextSelections.join("\n");
-      const currentPrimaryTitle = currentSelections[0] || "";
-      const nextPrimaryTitle = nextSelections[0] || "";
-
-      return {
-        ...prev,
-        serviceCategory: nextSelections.join(", "),
-        projectTitle:
-          !prev.projectTitle || prev.projectTitle === currentPrimaryTitle
-            ? nextPrimaryTitle
-            : prev.projectTitle,
-        fabricSpecs:
-          !prev.fabricSpecs.trim() || prev.fabricSpecs === previousAutoScope
-            ? nextAutoScope
-            : prev.fabricSpecs,
-      };
-    });
-    setErrors((prev) => ({ ...prev, serviceCategory: "", fabricSpecs: "" }));
   };
 
   const resetForm = () => {
@@ -412,8 +436,8 @@ export default function RfqForm() {
       nextErrors.phoneNo = "Phone number must be between 7 and 15 digits.";
     }
     
-    if (!selectedMarineServices.length) nextErrors.serviceCategory = "Select at least one marine service.";
-    if (!formData.fabricSpecs.trim()) nextErrors.fabricSpecs = "Scope area is required.";
+    if (!formData.serviceCategory.trim()) nextErrors.serviceCategory = "Service details is required.";
+    if (!formData.fabricSpecs.trim()) nextErrors.fabricSpecs = "Service description is required.";
     if (!formData.planRfqType) nextErrors.planRfqType = "Plan RFQ type is required.";
     if (!formData.planStartDate) nextErrors.planStartDate = "Starting date is required.";
     if (!formData.expectedDeadline) nextErrors.expectedDeadline = "Plan end date is required.";
@@ -492,8 +516,29 @@ export default function RfqForm() {
     }
   };
 
+  const handleClientSelect = (event) => {
+    const selectedValue = event.target.value;
+    const matchedClient = clientOptions.find((option) => createClientOptionKey(option) === selectedValue);
+
+    setFormData((prev) => ({
+      ...prev,
+      clientName: matchedClient?.client_name || "",
+      companyName: matchedClient?.company_name || "",
+      clientLocation: matchedClient?.client_location || "",
+      phoneNo: isPhoneMode ? matchedClient?.phone_no || "" : prev.phoneNo,
+      email: isEmailMode ? matchedClient?.email || "" : prev.email,
+    }));
+
+    setErrors((prev) => ({
+      ...prev,
+      clientName: "",
+      companyName: "",
+      clientLocation: "",
+    }));
+  };
+
   return (
-    <AppPageShell contentClassName="mx-auto w-full max-w-[1100px] px-3 py-2">
+    <AppPageShell contentClassName="mx-auto w-full max-w-[1240px] px-2 py-2">
       {toast ? (
         <div
           className={`fixed right-5 top-5 z-[100] flex items-center gap-3 rounded-lg px-5 py-3 text-white shadow-2xl ${
@@ -579,7 +624,14 @@ export default function RfqForm() {
 
           <SectionCard title="Client Information">
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              <FormField label="Attention" name="clientName" value={formData.clientName} onChange={handleChange} error={errors.clientName} />
+              <SelectField
+                label="Attention"
+                name="clientName"
+                value={selectedClientKey}
+                onChange={handleClientSelect}
+                options={clientSelectOptions}
+                error={errors.clientName}
+              />
               <FormField label="Company Name" name="companyName" value={formData.companyName} onChange={handleChange} error={errors.companyName} />
               <FormField label="Client Address" name="clientLocation" value={formData.clientLocation} onChange={handleChange} error={errors.clientLocation} />
             </div>
@@ -587,11 +639,12 @@ export default function RfqForm() {
 
           <SectionCard title="RFQ Scope">
             <ServiceScopeField
-              options={serviceCategoryOptions}
-              values={selectedMarineServices}
-              scopeValue={formData.fabricSpecs}
-              onToggle={handleMarineServiceToggle}
-              onScopeChange={handleChange}
+              serviceOptions={serviceCategoryOptions}
+              descriptionOptions={serviceDescriptionOptions}
+              serviceValue={formData.serviceCategory}
+              descriptionValue={formData.fabricSpecs}
+              remarksValue={formData.sizeBreakdown}
+              onChange={handleChange}
               error={errors.serviceCategory || errors.fabricSpecs}
             />
           </SectionCard>
@@ -636,7 +689,7 @@ export default function RfqForm() {
             <button
               type="button"
               onClick={handleSubmit}
-              disabled={isSubmitting || isLoadingRecord}
+              disabled={isSubmitting || isLoadingRecord || (editId ? !canManageRfq(authRole) : !canCreateRfq(authRole))}
               className="rounded-[10px] bg-[#34b556] px-6 py-2.5 text-[13px] font-bold text-white shadow-[0_8px_18px_rgba(52,181,86,0.25)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isSubmitting ? "PROCESSING..." : (editId ? "UPDATE" : "SUBMIT")}

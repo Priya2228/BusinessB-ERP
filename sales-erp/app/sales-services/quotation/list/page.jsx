@@ -6,6 +6,11 @@ import { List, Pencil, Plus, Printer, Send, Trash2, User } from "lucide-react";
 import AppPageShell from "../../../components/AppPageShell";
 import { buildApiUrl } from "../../../utils/api";
 import {
+  canCreateQuotation,
+  canManageQuotation,
+  getStoredAuthState,
+} from "../../../utils/rbac";
+import {
   getApprovalRecord,
   getStageLabel,
   isAnyStageDeclined,
@@ -32,6 +37,7 @@ export default function QuotationListPage() {
   const [deletingRowId, setDeletingRowId] = useState(null);
   const [savingClientRowId, setSavingClientRowId] = useState(null);
   const [printingRowId, setPrintingRowId] = useState(null);
+  const [authRole, setAuthRole] = useState("");
 
   const getAuthHeaders = () => {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -102,6 +108,7 @@ export default function QuotationListPage() {
       router.push("/login");
       return;
     }
+    setAuthRole(getStoredAuthState()?.role || "");
 
     const fetchRows = async () => {
       try {
@@ -354,7 +361,7 @@ export default function QuotationListPage() {
   }, [printingRowId]);
 
   return (
-    <AppPageShell contentClassName="mx-auto w-full max-w-[1100px] px-3 py-2">
+    <AppPageShell contentClassName="mx-auto w-full max-w-[1240px] px-3 py-2">
       {clientDialogRow ? (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 px-4">
           <div className="w-full max-w-[360px] rounded-[16px] border border-slate-200 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.18)]">
@@ -472,13 +479,15 @@ export default function QuotationListPage() {
         <div className="flex items-center justify-between">
           <h1 className="text-[16px] font-bold text-slate-900">Quotation List</h1>
           <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => router.push("/sales-services/quotation")}
-              className="flex h-10 w-10 items-center justify-center rounded-md border border-emerald-500 bg-white text-emerald-600"
-            >
-              <Plus size={18} />
-            </button>
+            {canCreateQuotation(authRole) ? (
+              <button
+                type="button"
+                onClick={() => router.push("/sales-services/quotation")}
+                className="flex h-10 w-10 items-center justify-center rounded-md border border-emerald-500 bg-white text-emerald-600"
+              >
+                <Plus size={18} />
+              </button>
+            ) : null}
             <button
               type="button"
               className="flex h-10 w-10 items-center justify-center rounded-md border border-blue-500 bg-white text-blue-600"
@@ -577,7 +586,9 @@ export default function QuotationListPage() {
                       const showPrintAction = isApproved && !isClientRejected;
                       const showClientAction = isApproved && !isClientAccepted && !isClientRejected;
                       const disableSend = !canSend;
-                      const disableEditDelete = isBusy || isLocked || (isApproved && !isClientRejected);
+                      const canManageRow = canManageQuotation(authRole);
+                      const disableEditDelete =
+                        !canManageRow || isBusy || isLocked || (isApproved && !isClientRejected);
 
                       return (
                         <>
@@ -659,40 +670,46 @@ export default function QuotationListPage() {
                           </button>
                         ) : null}
                         {!showPrintAction && !showClientAction ? (
-                          <button
-                            type="button"
-                            onClick={() => handleSendForApproval(row.id)}
-                            disabled={disableSend}
-                            className={`${iconButtonClassName} ${
-                              !disableSend
-                                ? "border-violet-200 bg-violet-50 text-violet-600"
-                                : "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
-                            }`}
-                            title={!disableSend ? "Send quotation for approval" : "Already sent for approval"}
-                          >
-                            <Send size={16} />
-                          </button>
+                          canManageRow ? (
+                            <button
+                              type="button"
+                              onClick={() => handleSendForApproval(row.id)}
+                              disabled={disableSend}
+                              className={`${iconButtonClassName} ${
+                                !disableSend
+                                  ? "border-violet-200 bg-violet-50 text-violet-600"
+                                  : "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                              }`}
+                              title={!disableSend ? "Send quotation for approval" : "Already sent for approval"}
+                            >
+                              <Send size={16} />
+                            </button>
+                          ) : null
                         ) : null}
-                        <button
-                          type="button"
-                          onClick={() => handleOpenEditModal(row)}
-                          disabled={disableEditDelete}
-                          className={`${
-                            disableEditDelete ? "cursor-not-allowed text-slate-300" : "text-amber-600"
-                          }`}
-                        >
-                          <Pencil size={16} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(row.id)}
-                          disabled={disableEditDelete}
-                          className={`${
-                            disableEditDelete ? "cursor-not-allowed text-slate-300" : "text-rose-600"
-                          }`}
-                        >
-                          <Trash2 size={16} />
-                        </button>
+                        {canManageRow ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditModal(row)}
+                              disabled={disableEditDelete}
+                              className={`${
+                                disableEditDelete ? "cursor-not-allowed text-slate-300" : "text-amber-600"
+                              }`}
+                            >
+                              <Pencil size={16} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(row.id)}
+                              disabled={disableEditDelete}
+                              className={`${
+                                disableEditDelete ? "cursor-not-allowed text-slate-300" : "text-rose-600"
+                              }`}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </>
+                        ) : null}
                       </div>
                     </td>
                         </>

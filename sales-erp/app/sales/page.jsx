@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import Sidebar, { AppFooter, AppHeader } from "../components/Sidebar";
-import { Pencil, Trash2, X, List } from 'lucide-react';
+import { List, Pencil, Trash2, X } from 'lucide-react';
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { useRouter } from "next/navigation";
@@ -57,6 +57,31 @@ useEffect(() => {
 }, [router]);
 
 useEffect(() => {
+  const token = localStorage.getItem("token");
+  if (!token) return;
+
+  const loadItems = async () => {
+    try {
+      const response = await fetch(buildApiUrl("/api/items/"), {
+        headers: { Authorization: `Token ${token}` },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to load items: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setItemOptions(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error("loadItems error:", error);
+      setItemOptions([]);
+    }
+  };
+
+  loadItems();
+}, []);
+
+useEffect(() => {
   const syncOpeningStockRows = () => {
     setOpeningStockRows(readOpeningStockRows());
   };
@@ -103,6 +128,7 @@ const getLineBaseValues = (rec) => {
   const [billType, setBillType] = useState("");
   const [records, setRecords] = useState([]);
   const [openingStockRows, setOpeningStockRows] = useState([]);
+  const [itemOptions, setItemOptions] = useState([]);
   const [errors, setErrors] = useState({});
   const [toast, setToast] = useState(null);
   const [editingId, setEditingId] = useState(null);
@@ -139,6 +165,21 @@ const [invoiceCode, setInvoiceCode] = useState("SI-1003");
       ) || null,
     [openingStockRows, itemInput.itemCode, itemInput.itemName]
   );
+
+  const itemDropdownOptions = useMemo(() => {
+    if (itemOptions.length > 0) {
+      return itemOptions;
+    }
+
+    return openingStockRows.map((row) => ({
+      item_id: row.item_id || row.id || row.item_code,
+      item_code: row.item_code || "",
+      item_name: row.item_name || "",
+      item_category: row.item_category || "",
+      unit: row.unit || "",
+      sales_price: row.sales_price || "",
+    }));
+  }, [itemOptions, openingStockRows]);
 
   // --- 2. Dynamic Summary Calculations ---
 const totalTaxableBase = records.reduce((sum, rec) => sum + getLineBaseValues(rec).taxable, 0);
@@ -621,7 +662,7 @@ const handleEditInitiate = (rec) => {
         </div>
       )}
 
-      <div className="mx-auto max-w-[1100px] px-3 py-2">
+      <div className="mx-auto max-w-[1240px] px-2 py-2">
         <div className="mt-3 p-5 rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="flex justify-between items-center mb-5">
             <h2 className="text-[22px] font-bold text-black">Add Sales Invoice</h2>
@@ -672,13 +713,13 @@ const handleEditInitiate = (rec) => {
     </>
   )}
 </div>
-              {/* This button now navigates to your new list page */}
-        <button
-                    onClick={() => router.push("/list")}
-                    className="h-10 w-10 bg-white border border-blue-500 text-blue-600 rounded-md flex items-center justify-center"
-                  >
-                    <List size={18} />
-                  </button>
+              <button
+                onClick={() => router.push("/list")}
+                className="h-10 w-10 bg-white border border-blue-500 text-blue-600 rounded-md flex items-center justify-center"
+                title="Sales list"
+              >
+                <List size={18} />
+              </button>
             </div>
           </div>
 
@@ -770,23 +811,28 @@ const handleEditInitiate = (rec) => {
             value={itemInput.itemName} 
             onChange={(e) => {
               const selectedName = e.target.value;
-              const selectedRow = openingStockRows.find((row) => row.item_name === selectedName) || null;
+              const selectedItem = itemDropdownOptions.find((row) => row.item_name === selectedName) || null;
+              const selectedRow =
+                openingStockRows.find(
+                  (row) =>
+                    String(row.item_code || "") === String(selectedItem?.item_code || "") ||
+                    String(row.item_name || "") === String(selectedName || "")
+                ) || null;
 
               setItemInput({
                 ...itemInput,
-                itemCode: selectedRow?.item_code || "",
+                itemCode: selectedItem?.item_code || selectedRow?.item_code || "",
                 itemName: selectedName,
-                itemCategory: selectedRow?.item_category || "",
-                unit: selectedRow?.unit || "",
+                itemCategory: selectedItem?.item_category || selectedRow?.item_category || "",
+                unit: selectedItem?.unit || selectedRow?.unit || "",
                 quantity: "",
+                rate: selectedItem?.sales_price ? String(selectedItem.sales_price) : itemInput.rate,
               });
             }} 
             className={`h-12 w-full rounded-xl border ${errors.itemName ? 'border-red-500' : 'border-gray-300'} bg-white px-4 text-[12px] outline-none`}
           >
             <option value="">Choose Item</option>
-            {openingStockRows
-              .filter((row) => Number(row.quantity || 0) > 0)
-              .map((row) => (
+            {itemDropdownOptions.map((row) => (
                 <option key={row.item_id || row.id || row.item_code} value={row.item_name}>
                   {row.item_name}
                 </option>

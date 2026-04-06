@@ -6,6 +6,11 @@ import { List, X } from "lucide-react";
 import { FaMoneyBillWave } from "react-icons/fa";
 import AppPageShell from "../../components/AppPageShell";
 import { buildApiUrl } from "../../utils/api";
+import {
+  canCreateQuotation,
+  canManageQuotation,
+  getStoredAuthState,
+} from "../../utils/rbac";
 
 const COUNTRY_CONFIG = {
   India: { currency: "Rs.", taxRate: 0.18, symbol: "INR", conversionRate: 1, decimalPlaces: 2 },
@@ -148,6 +153,7 @@ export default function QuotationPage() {
   const [errors, setErrors] = useState({});
   const [scopeRows, setScopeRows] = useState([createEmptyScopeRow()]);
   const [baseNetAmount, setBaseNetAmount] = useState(0);
+  const [authRole, setAuthRole] = useState("");
   const [formData, setFormData] = useState({
     customerName: "",
     quotationDate: new Date().toISOString().split("T")[0],
@@ -185,10 +191,25 @@ export default function QuotationPage() {
     }, 3000);
   };
 
+  const getAuthHeaders = () => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    return token ? { Authorization: `Token ${token}` } : {};
+  };
+
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) {
       router.push("/login");
+      return;
+    }
+    const nextRole = getStoredAuthState()?.role || "";
+    setAuthRole(nextRole);
+    if (isEditMode && !canManageQuotation(nextRole)) {
+      router.push("/sales-services/quotation/list");
+      return;
+    }
+    if (!activeId && !canCreateQuotation(nextRole)) {
+      router.push("/sales-services/quotation/list");
     }
   }, [router]);
 
@@ -197,12 +218,12 @@ export default function QuotationPage() {
       try {
         setLoading(true);
         const [quotationsResponse, termsResponse, rfqResponse, costEstimationsResponse, estimationResponse] = await Promise.all([
-          fetch(buildApiUrl("/api/quotations/")),
-          fetch(buildApiUrl("/api/quotation-terms/")),
-          fetch(buildApiUrl("/api/sales-services/")),
-          fetch(buildApiUrl("/api/cost-estimations/")),
+          fetch(buildApiUrl("/api/quotations/"), { headers: getAuthHeaders() }),
+          fetch(buildApiUrl("/api/quotation-terms/"), { headers: getAuthHeaders() }),
+          fetch(buildApiUrl("/api/sales-services/"), { headers: getAuthHeaders() }),
+          fetch(buildApiUrl("/api/cost-estimations/"), { headers: getAuthHeaders() }),
           estimationId && !activeId
-            ? fetch(buildApiUrl(`/api/cost-estimations/${estimationId}/`))
+            ? fetch(buildApiUrl(`/api/cost-estimations/${estimationId}/`), { headers: getAuthHeaders() })
             : Promise.resolve(null),
         ]);
 
@@ -267,7 +288,9 @@ export default function QuotationPage() {
     const fetchQuotationDetail = async () => {
       try {
         setLoading(true);
-        const response = await fetch(buildApiUrl(`/api/quotations/${activeId}/`));
+        const response = await fetch(buildApiUrl(`/api/quotations/${activeId}/`), {
+          headers: getAuthHeaders(),
+        });
         if (!response.ok) {
           showToast("Failed to load quotation", "error");
           return;
@@ -478,7 +501,10 @@ export default function QuotationPage() {
       setSaving(true);
       const response = await fetch(buildApiUrl(isEditMode ? `/api/quotations/${editId}/` : "/api/quotations/"), {
         method: isEditMode ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeaders(),
+        },
         body: JSON.stringify(payload),
       });
 
@@ -501,7 +527,7 @@ export default function QuotationPage() {
 
   if (loading) {
     return (
-      <AppPageShell contentClassName="mx-auto w-full max-w-[1100px] px-3 py-2">
+      <AppPageShell contentClassName="mx-auto w-full max-w-[1240px] px-3 py-2">
         <div className="mt-3 rounded-[20px] border border-slate-200 bg-white p-6 text-[14px] text-slate-500 shadow-sm">
           Loading quotation...
         </div>
@@ -510,7 +536,7 @@ export default function QuotationPage() {
   }
 
   return (
-    <AppPageShell contentClassName="mx-auto w-full max-w-[1100px] px-3 py-2">
+    <AppPageShell contentClassName="mx-auto w-full max-w-[1240px] px-3 py-2">
       {toast ? (
         <div
           className={`fixed right-5 top-5 z-[100] flex items-center gap-3 rounded-lg px-5 py-3 text-white shadow-2xl ${
@@ -844,7 +870,7 @@ export default function QuotationPage() {
             <button
               type="button"
               onClick={handleSubmit}
-              disabled={saving}
+              disabled={saving || (isEditMode ? !canManageQuotation(authRole) : !canCreateQuotation(authRole))}
               className="h-11 rounded-xl bg-green-500 px-6 text-[13px] font-bold text-white shadow disabled:opacity-70"
             >
               {saving ? "SAVING..." : isEditMode ? "UPDATE" : "SUBMIT"}

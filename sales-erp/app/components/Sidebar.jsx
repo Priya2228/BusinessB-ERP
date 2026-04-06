@@ -20,18 +20,33 @@ import {
   Briefcase,
 } from "lucide-react";
 import NotificationBell from "./NotificationBell";
+import { ROLES, canViewMenuItem, clearAuthState, getStoredAuthState, normalizeRole } from "../utils/rbac";
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const [authState, setAuthState] = useState(null);
 
+  useEffect(() => {
+    setAuthState(getStoredAuthState());
+  }, []);
+
+  const role = normalizeRole(authState?.role);
   const menuItems = [
-    { name: "Dashboard", icon: <LayoutGrid size={20} />, href: "/Dashboard" },
-    { name: "Sales", icon: <ShoppingBag size={20} />, href: "/sales" },
-    { name: "Purchase", icon: <ShoppingCart size={20} />, href: "/purchase" },
-    { name: "Master", icon: <SlidersHorizontal size={20} />, href: "/master" },
-    { name: "Stock", icon: <Boxes size={20} />, href: "/stock" },
-    { name: "Sales & Services", icon: <Briefcase size={20} />, href: "/sales-services" },
+    { name: "Dashboard", icon: <LayoutGrid size={20} />, href: "/Dashboard", roles: [ROLES.ADMIN, ROLES.USER, ROLES.SALES_LEAD, ROLES.SALES_HEAD, ROLES.DEPT_HEAD, ROLES.MD] },
+    { name: "Sales", icon: <ShoppingBag size={20} />, href: "/sales", roles: [ROLES.ADMIN, ROLES.SALES_HEAD] },
+    { name: "Purchase", icon: <ShoppingCart size={20} />, href: "/purchase", roles: [ROLES.ADMIN] },
+    { name: "Master", icon: <SlidersHorizontal size={20} />, href: "/master", roles: [ROLES.ADMIN] },
+    { name: "Stock", icon: <Boxes size={20} />, href: "/stock", roles: [ROLES.ADMIN] },
+    { name: "Sales & Services", icon: <Briefcase size={20} />, href: "/sales-services", roles: [ROLES.ADMIN, ROLES.USER, ROLES.SALES_LEAD, ROLES.SALES_HEAD, ROLES.DEPT_HEAD, ROLES.MD] },
   ];
+ // --- WITH THIS STRICT CODE ---
+
+// STRICT FILTER: This ensures MD ONLY sees Dashboard and Sales & Services
+const visibleMenuItems = menuItems.filter((item) => {
+  if (!role) return false;
+  // This check is the "Gatekeeper". If 'md' isn't in the item.roles, it disappears.
+  return item.roles.includes(role);
+});
 
   return (
     <div className="sticky top-0 flex h-screen w-[225px] flex-col bg-white p-6 shadow-sm">
@@ -41,7 +56,7 @@ export default function Sidebar() {
 
       <nav className="sidebar-scroll-hidden flex-1 overflow-y-auto">
         <ul className="space-y-6">
-          {menuItems.map((item) => {
+          {visibleMenuItems.map((item) => {
             const isActive =
               pathname === item.href ||
               (item.href !== "/Dashboard" && pathname.startsWith(`${item.href}/`));
@@ -77,13 +92,9 @@ export default function Sidebar() {
 export function AppHeader() {
   const router = useRouter();
   const dropdownRef = useRef(null);
-  const [username] = useState(() => {
-    if (typeof window === "undefined") {
-      return "Adhoc Demo Team";
-    }
-
-    return localStorage.getItem("username") || "Adhoc Demo Team";
-  });
+  const [authState] = useState(() => getStoredAuthState());
+  const username = authState?.username || "Adhoc Demo Team";
+  const designation = authState?.designation || "";
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -98,8 +109,7 @@ export function AppHeader() {
   }, []);
 
   const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("username");
+    clearAuthState();
     router.push("/login");
   };
 
@@ -132,6 +142,9 @@ export function AppHeader() {
                   </span>
                 </div>
                 <p className="mt-4 text-center text-[14px] font-bold text-slate-800">{username}</p>
+                {designation ? (
+                  <p className="mt-1 text-center text-[12px] text-slate-500">{designation}</p>
+                ) : null}
               </div>
               <div className="my-5 border-t border-slate-200" />
               <div className="space-y-1">

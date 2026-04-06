@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import AppPageShell from "../components/AppPageShell";
 import MoneyWaveIcon from "../components/MoneyWaveIcon";
 import { buildApiUrl } from "../utils/api";
+import toast, { Toaster } from "react-hot-toast";
 import {
   ChevronDown,
   List,
@@ -177,7 +178,7 @@ export default function MasterPage() {
 
     const missingField = requiredFields.find(([key]) => !String(formData[key] ?? "").trim());
     if (missingField) {
-      alert(`${missingField[1]} is required.`);
+      toast.error(`${missingField[1]} is required.`);
       return;
     }
     
@@ -235,7 +236,7 @@ export default function MasterPage() {
       }
 
       if (response.ok) {
-        alert(isEditing ? "Item updated successfully!" : "Item saved successfully!");
+        toast.success(isEditing ? "Item updated successfully." : "Item created successfully.");
         if (isEditing) {
           router.push("/itemlist");
         } else {
@@ -290,7 +291,7 @@ export default function MasterPage() {
           errorData = { status: response.status };
         }
         console.error("Server Error:", errorData);
-        alert(
+        toast.error(
           errorData?.detail ||
             errorData?.item_code?.[0] ||
             errorData?.item_image?.[0] ||
@@ -298,7 +299,7 @@ export default function MasterPage() {
         );
       }
     } catch (error) {
-      alert("Connection to server failed.");
+      toast.error("Connection to server failed.");
     }
   };
 
@@ -446,8 +447,9 @@ export default function MasterPage() {
 
   return (
     <AppPageShell
-      contentClassName="mx-auto w-full max-w-[1100px] px-3 py-2"
+      contentClassName="mx-auto w-full max-w-[1240px] px-3 py-2"
     >
+            <Toaster position="top-right" />
             <div className="mt-3 rounded-[24px] border border-slate-300 bg-white shadow-[0_4px_18px_rgba(15,23,42,0.05)]">
               <div className="flex items-center justify-between px-6 py-6">
                 <h1 className="text-[18px] font-bold text-slate-900">{isEditing ? "Edit Item" : "Add Item"}</h1>

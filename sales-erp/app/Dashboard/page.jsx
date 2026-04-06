@@ -66,7 +66,7 @@ export default function Dashboard() {
   return (
     <AppPageShell
       mainClassName="custom-scrollbar"
-      contentClassName="mx-auto w-full max-w-[1100px] px-3 py-2"
+      contentClassName="mx-auto w-full max-w-[1240px] px-3 py-2"
       contentWrapperClassName="mt-3 rounded-2xl border border-slate-200 bg-white p-8 shadow-sm"
     >
           <div className="mb-8">

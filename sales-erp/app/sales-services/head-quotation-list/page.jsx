@@ -6,6 +6,12 @@ import { CheckCircle2, Pencil, Plus, Trash2, X } from "lucide-react";
 import AppPageShell from "../../components/AppPageShell";
 import { buildApiUrl } from "../../utils/api";
 import {
+  canCreateQuotation,
+  canApproveQuotation,
+  getStoredAuthState,
+  isAdminRole,
+} from "../../utils/rbac";
+import {
   getApprovalRecord,
   getStageBadgeClass,
   getStageLabel,
@@ -20,6 +26,7 @@ export default function HeadQuotationListPage() {
   const [error, setError] = useState("");
   const [reviewRow, setReviewRow] = useState(null);
   const [reviewForm, setReviewForm] = useState({ status: "approved", comment: "" });
+  const [authRole, setAuthRole] = useState("");
 
   const getAuthHeaders = () => {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -55,6 +62,7 @@ export default function HeadQuotationListPage() {
       return;
     }
 
+    setAuthRole(getStoredAuthState()?.role || "");
     fetchRows();
   }, [fetchRows, router]);
 
@@ -139,20 +147,22 @@ export default function HeadQuotationListPage() {
   };
 
   return (
-    <AppPageShell contentClassName="mx-auto w-full max-w-[1100px] px-3 py-2">
+    <AppPageShell contentClassName="mx-auto w-full max-w-[1240px] px-3 py-2">
       <div className="mt-3 mx-auto max-w-[1180px] rounded-[20px] border border-sky-100 bg-[#fbfdff] p-4 shadow-[0_8px_28px_rgba(15,23,42,0.05)]">
         <div className="flex items-center justify-between gap-3">
           <div>
             <h1 className="text-[16px] font-bold text-slate-900">Head Quotation List</h1>
           </div>
-          <button
-            type="button"
-            onClick={() => router.push("/sales-services/quotation")}
-            className="flex h-10 w-10 items-center justify-center rounded-md border border-emerald-500 bg-white text-emerald-600"
-            title="Go to quotation"
-          >
-            <Plus size={18} />
-          </button>
+          {canCreateQuotation(authRole) ? (
+            <button
+              type="button"
+              onClick={() => router.push("/sales-services/quotation")}
+              className="flex h-10 w-10 items-center justify-center rounded-md border border-emerald-500 bg-white text-emerald-600"
+              title="Go to quotation"
+            >
+              <Plus size={18} />
+            </button>
+          ) : null}
         </div>
 
         <div className="mt-4 overflow-hidden rounded-[14px] border border-slate-200">
@@ -196,40 +206,46 @@ export default function HeadQuotationListPage() {
                         <td className="border-b border-slate-100 px-4 py-3">{renderStatus(row.approval_workflow)}</td>
                         <td className="border-b border-slate-100 px-4 py-3">
                           <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => openReviewModal(row)}
-                              className="flex h-7 w-7 items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 text-emerald-600 transition"
-                              title="Head review"
-                            >
-                              <CheckCircle2 size={14} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => router.push(`/sales-services/quotation?editId=${row.id}`)}
-                              disabled={isHeadApproved}
-                              className={`flex h-7 w-7 items-center justify-center rounded-md border transition ${
-                                isHeadApproved
-                                  ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
-                                  : "border-amber-200 bg-amber-50 text-amber-600"
-                              }`}
-                              title={isHeadApproved ? "Disabled after head approval" : "Update quotation"}
-                            >
-                              <Pencil size={14} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDelete(row.id)}
-                              disabled={isHeadApproved}
-                              className={`flex h-7 w-7 items-center justify-center rounded-md border transition ${
-                                isHeadApproved
-                                  ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
-                                  : "border-rose-200 bg-rose-50 text-rose-600"
-                              }`}
-                              title={isHeadApproved ? "Disabled after head approval" : "Delete quotation"}
-                            >
-                              <Trash2 size={14} />
-                            </button>
+                            {canApproveQuotation(authRole) ? (
+                              <button
+                                type="button"
+                                onClick={() => openReviewModal(row)}
+                                className="flex h-7 w-7 items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 text-emerald-600 transition"
+                                title="Head review"
+                              >
+                                <CheckCircle2 size={14} />
+                              </button>
+                            ) : null}
+                            {isAdminRole(authRole) ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => router.push(`/sales-services/quotation?editId=${row.id}`)}
+                                  disabled={isHeadApproved}
+                                  className={`flex h-7 w-7 items-center justify-center rounded-md border transition ${
+                                    isHeadApproved
+                                      ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                                      : "border-amber-200 bg-amber-50 text-amber-600"
+                                  }`}
+                                  title={isHeadApproved ? "Disabled after head approval" : "Update quotation"}
+                                >
+                                  <Pencil size={14} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDelete(row.id)}
+                                  disabled={isHeadApproved}
+                                  className={`flex h-7 w-7 items-center justify-center rounded-md border transition ${
+                                    isHeadApproved
+                                      ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                                      : "border-rose-200 bg-rose-50 text-rose-600"
+                                  }`}
+                                  title={isHeadApproved ? "Disabled after head approval" : "Delete quotation"}
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </>
+                            ) : null}
                           </div>
                         </td>
                       </tr>

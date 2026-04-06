@@ -6,6 +6,12 @@ import { CheckCircle2, Eye, Pencil, Plus, Trash2, X } from "lucide-react";
 import AppPageShell from "../../components/AppPageShell";
 import { buildApiUrl } from "../../utils/api";
 import {
+  canApproveCostEstimation,
+  canCreateCostEstimation,
+  getStoredAuthState,
+  isAdminRole,
+} from "../../utils/rbac";
+import {
   getApprovalRecord,
   getStageBadgeClass,
   getStageLabel,
@@ -13,17 +19,15 @@ import {
 
 const statusButtonClassName =
   "inline-flex w-fit max-w-full items-center rounded-full px-4 py-1.5 text-[10px] font-bold leading-none text-white shadow-[0_8px_16px_rgba(15,23,42,0.16)]";
-const quotationButtonClassName =
-  "inline-flex items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[10px] font-bold text-emerald-600 transition";
 
 export default function DeptHeadCostEstimationListPage() {
   const router = useRouter();
   const [rows, setRows] = useState([]);
-  const [quotationRows, setQuotationRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reviewRow, setReviewRow] = useState(null);
   const [reviewForm, setReviewForm] = useState({ status: "approved", comment: "" });
+  const [authRole, setAuthRole] = useState("");
 
   const getAuthHeaders = () => {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -34,14 +38,9 @@ export default function DeptHeadCostEstimationListPage() {
     try {
       setLoading(true);
       setError("");
-      const [response, quotationResponse] = await Promise.all([
-        fetch(buildApiUrl("/api/cost-estimations/"), {
-          headers: getAuthHeaders(),
-        }),
-        fetch(buildApiUrl("/api/quotations/"), {
-          headers: getAuthHeaders(),
-        }),
-      ]);
+      const response = await fetch(buildApiUrl("/api/cost-estimations/"), {
+        headers: getAuthHeaders(),
+      });
 
       if (!response.ok) {
         setError("Failed to fetch cost estimations.");
@@ -49,9 +48,7 @@ export default function DeptHeadCostEstimationListPage() {
       }
 
       const data = await response.json();
-      const quotationData = quotationResponse.ok ? await quotationResponse.json() : [];
       setRows(Array.isArray(data) ? data : []);
-      setQuotationRows(Array.isArray(quotationData) ? quotationData : []);
     } catch {
       setError("Network error while fetching cost estimations.");
     } finally {
@@ -66,6 +63,7 @@ export default function DeptHeadCostEstimationListPage() {
       return;
     }
 
+    setAuthRole(getStoredAuthState()?.role || "");
     fetchRows();
   }, [fetchRows, router]);
 
@@ -131,16 +129,6 @@ export default function DeptHeadCostEstimationListPage() {
 
   const visibleRows = rows.filter((row) => getApprovalRecord(row.approval_workflow).sentToHead);
 
-  const openQuotationPreview = (row) => {
-    const linkedQuotation = quotationRows.find((quotation) => quotation.rfq_no === row.rfq_no);
-    if (!linkedQuotation?.id) {
-      window.alert("Quotation preview is not available for this record.");
-      return;
-    }
-
-    router.push(`/sales-services/quotation/preview/${linkedQuotation.id}`);
-  };
-
   const renderStatus = (approvalWorkflow) => {
     const record = getApprovalRecord(approvalWorkflow);
     return (
@@ -156,20 +144,22 @@ export default function DeptHeadCostEstimationListPage() {
   };
 
   return (
-    <AppPageShell contentClassName="mx-auto w-full max-w-[1100px] px-3 py-2">
+    <AppPageShell contentClassName="mx-auto w-full max-w-[1240px] px-3 py-2">
       <div className="mt-3 mx-auto max-w-[1180px] rounded-[20px] border border-sky-100 bg-[#fbfdff] p-4 shadow-[0_8px_28px_rgba(15,23,42,0.05)]">
         <div className="flex items-center justify-between gap-3">
           <div>
             <h1 className="text-[16px] font-bold text-slate-900">Dept Head Cost Estimation List</h1>
           </div>
-          <button
-            type="button"
-            onClick={() => router.push("/sales-services/cost-sheet")}
-            className="flex h-10 w-10 items-center justify-center rounded-md border border-emerald-500 bg-white text-emerald-600"
-            title="Go to cost estimation sheet"
-          >
-            <Plus size={18} />
-          </button>
+          {canCreateCostEstimation(authRole) ? (
+            <button
+              type="button"
+              onClick={() => router.push("/sales-services/cost-sheet")}
+              className="flex h-10 w-10 items-center justify-center rounded-md border border-emerald-500 bg-white text-emerald-600"
+              title="Go to cost estimation sheet"
+            >
+              <Plus size={18} />
+            </button>
+          ) : null}
         </div>
 
         <div className="mt-4 overflow-hidden rounded-[14px] border border-slate-200">
@@ -196,8 +186,6 @@ export default function DeptHeadCostEstimationListPage() {
                   {visibleRows.map((row) => {
                     const approvalRecord = getApprovalRecord(row.approval_workflow);
                     const isHeadApproved = approvalRecord.head.status === "approved";
-                    const isQuotationEnabled =
-                      approvalRecord.head.status === "approved" && approvalRecord.md.status === "approved";
 
                     return (
                     <tr key={row.id} className="align-top">
@@ -222,31 +210,16 @@ export default function DeptHeadCostEstimationListPage() {
                       </td>
                       <td className="border-b border-slate-100 px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => openQuotationPreview(row)}
-                            disabled={!isQuotationEnabled}
-                            className={`${quotationButtonClassName} ${
-                              isQuotationEnabled
-                                ? ""
-                                : "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
-                            }`}
-                            title={
-                              isQuotationEnabled
-                                ? "Open quotation preview"
-                                : "Head and MD approval required"
-                            }
-                          >
-                            QUOTATION
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openReviewModal(row)}
-                            className="flex h-7 w-7 items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 text-emerald-600 transition"
-                            title="Head review"
-                          >
-                            <CheckCircle2 size={14} />
-                          </button>
+                          {canApproveCostEstimation(authRole) ? (
+                            <button
+                              type="button"
+                              onClick={() => openReviewModal(row)}
+                              className="flex h-7 w-7 items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 text-emerald-600 transition"
+                              title="Head review"
+                            >
+                              <CheckCircle2 size={14} />
+                            </button>
+                          ) : null}
                           <button
                             type="button"
                             onClick={() => router.push(`/sales-services/cost-sheet/view/${row.id}`)}
@@ -255,32 +228,36 @@ export default function DeptHeadCostEstimationListPage() {
                           >
                             <Eye size={14} />
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => router.push(`/sales-services/cost-sheet?editId=${row.id}`)}
-                            disabled={isHeadApproved}
-                            className={`flex h-7 w-7 items-center justify-center rounded-md border transition ${
-                              isHeadApproved
-                                ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
-                                : "border-amber-200 bg-amber-50 text-amber-600"
-                            }`}
-                            title={isHeadApproved ? "Disabled after head approval" : "Update cost estimation"}
-                          >
-                            <Pencil size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(row.id)}
-                            disabled={isHeadApproved}
-                            className={`flex h-7 w-7 items-center justify-center rounded-md border transition ${
-                              isHeadApproved
-                                ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
-                                : "border-rose-200 bg-rose-50 text-rose-600"
-                            }`}
-                            title={isHeadApproved ? "Disabled after head approval" : "Delete cost estimation"}
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                          {isAdminRole(authRole) ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => router.push(`/sales-services/cost-sheet?editId=${row.id}`)}
+                                disabled={isHeadApproved}
+                                className={`flex h-7 w-7 items-center justify-center rounded-md border transition ${
+                                  isHeadApproved
+                                    ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                                    : "border-amber-200 bg-amber-50 text-amber-600"
+                                }`}
+                                title={isHeadApproved ? "Disabled after head approval" : "Update cost estimation"}
+                              >
+                                <Pencil size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(row.id)}
+                                disabled={isHeadApproved}
+                                className={`flex h-7 w-7 items-center justify-center rounded-md border transition ${
+                                  isHeadApproved
+                                    ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                                    : "border-rose-200 bg-rose-50 text-rose-600"
+                                }`}
+                                title={isHeadApproved ? "Disabled after head approval" : "Delete cost estimation"}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </>
+                          ) : null}
                         </div>
                       </td>
                     </tr>

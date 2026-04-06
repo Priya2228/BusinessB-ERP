@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import AppPageShell from "../components/AppPageShell";
 import { buildApiUrl, getApiBaseUrl } from "../utils/api";
+import toast, { Toaster } from "react-hot-toast";
 import {
   ChevronDown,
   ChevronLeft,
@@ -118,7 +119,7 @@ export default function ItemListPage() {
   const handleUpdate = async (id) => {
     try {
       const response = await fetch(buildApiUrl(`/api/items/${id}/`), {
-        method: "PATCH",
+        method: "PUT",
         headers: {
           ...getAuthHeaders(),
           "Content-Type": "application/json",
@@ -131,6 +132,7 @@ export default function ItemListPage() {
         setItems((prev) => prev.map((it) => (it.id === id ? updatedItem : it)));
         setEditingId(null);
         setEditFormData({});
+        toast.success("Item updated successfully.");
       } else {
         let errorData = {};
         try {
@@ -139,10 +141,11 @@ export default function ItemListPage() {
           errorData = {};
         }
         console.error("Update failed:", errorData);
-        alert(errorData?.detail || "Failed to update item.");
+        toast.error(errorData?.detail || "Failed to update item.");
       }
     } catch (error) {
       console.error("Update failed:", error);
+      toast.error("Network error while updating item.");
     }
   };
 
@@ -155,9 +158,13 @@ export default function ItemListPage() {
       });
       if (response.ok) {
         setItems((prev) => prev.filter((item) => item.id !== id));
+        toast.success("Item deleted successfully.");
+      } else {
+        toast.error("Failed to delete item.");
       }
     } catch (error) {
       console.error("Delete failed:", error);
+      toast.error("Network error while deleting item.");
     }
   };
 
@@ -180,11 +187,11 @@ export default function ItemListPage() {
 
   return (
     <AppPageShell
-      contentClassName="mx-auto w-full max-w-[1100px] px-3 py-2"
-      contentWrapperClassName="mt-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+      contentClassName="mx-auto w-full max-w-[1240px] px-2 py-2"
       showFooter={false}
     >
-          <div className="rounded-[24px] border border-slate-300 bg-white px-5 py-5 shadow-[0_4px_18px_rgba(15,23,42,0.05)]">
+          <Toaster position="top-right" />
+          <div className="mt-3 rounded-[24px] border border-slate-300 bg-white px-5 py-5 shadow-[0_4px_18px_rgba(15,23,42,0.05)]">
             <div className="flex items-center justify-between">
               <h1 className="text-[17px] font-bold text-slate-900">Item List</h1>
               <div className="flex items-center gap-3">

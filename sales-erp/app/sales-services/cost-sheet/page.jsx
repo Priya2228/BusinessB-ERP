@@ -5,6 +5,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { List, Pencil, Trash2, X } from "lucide-react";
 import AppPageShell from "../../components/AppPageShell";
 import { buildApiUrl } from "../../utils/api";
+import {
+  canCreateCostEstimation,
+  canManageCostEstimation,
+  getStoredAuthState,
+} from "../../utils/rbac";
 
 const inputClassName =
   "h-[34px] w-full rounded-[8px] border border-slate-200 bg-[#f9fbfd] px-3 text-[12px] text-slate-800 outline-none transition focus:border-sky-400";
@@ -304,7 +309,7 @@ function SimpleAmountSection({ title, value, onChange }) {
           label={title}
           value={value}
           onChange={onChange}
-          className="text-right"
+          className="text-left"
           placeholder={`Enter ${title.toLowerCase()} amount`}
         />
       </div>
@@ -324,6 +329,7 @@ export default function ClothSalesCostSheetPage() {
   const [toast, setToast] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isPageLoading, setIsPageLoading] = useState(Boolean(editId));
+  const [authRole, setAuthRole] = useState("");
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -332,13 +338,25 @@ export default function ClothSalesCostSheetPage() {
       return;
     }
 
+    const nextRole = getStoredAuthState()?.role || "";
+    setAuthRole(nextRole);
+    if (editId && !canManageCostEstimation(nextRole)) {
+      router.push("/sales-services/cost-sheet/list");
+      return;
+    }
+    if (!editId && !canCreateCostEstimation(nextRole)) {
+      router.push("/sales-services/cost-sheet/list");
+      return;
+    }
+
     const loadRealtimeData = async () => {
       try {
         setIsPageLoading(Boolean(editId));
-        const rfqPromise = fetch(buildApiUrl("/api/sales-services/"));
-        const sectionOptionPromise = fetch(buildApiUrl("/api/cost-estimation-options/"));
+        const authHeaders = { Authorization: `Token ${token}` };
+        const rfqPromise = fetch(buildApiUrl("/api/sales-services/"), { headers: authHeaders });
+        const sectionOptionPromise = fetch(buildApiUrl("/api/cost-estimation-options/"), { headers: authHeaders });
         const estimationPromise = editId
-          ? fetch(buildApiUrl(`/api/cost-estimations/${editId}/`))
+          ? fetch(buildApiUrl(`/api/cost-estimations/${editId}/`), { headers: authHeaders })
           : Promise.resolve(null);
 
         const [rfqResponse, sectionOptionResponse, estimationResponse] = await Promise.all([
@@ -589,79 +607,110 @@ export default function ClothSalesCostSheetPage() {
     setSectionDrafts(createInitialDrafts());
   };
 
-  const handleSubmit = async () => {
-    if (!formData.rfqNo) {
-      showToast("Please choose an RFQ before submitting.", "error");
+ const handleSubmit = async () => {
+  // 1. Initial Validation
+  if (!formData.rfqNo) {
+    showToast("Please choose an RFQ before submitting.", "error");
+    return;
+  }
+
+  const hasRows = Object.values(sections).some((rows) => rows.length > 0);
+  if (!hasRows) {
+    showToast("Add at least one cost item before submitting.", "error");
+    return;
+  }
+
+  // 2. Build the Payload
+  const payload = {
+    estimation_no: formData.costSheetNo,
+    rfq_no: formData.rfqNo,
+    registered_date: formData.registeredDate,
+    delivery_date: formData.deliveryDate || null,
+    client_name: formData.clientName,
+    company_name: formData.companyName,
+    phone_no: formData.phoneNo,
+    email: formData.email,
+    delivery_location: formData.deliveryLocation,
+    payment_terms: formData.paymentTerms,
+    tax_preference: formData.taxPreference,
+    delivery_mode: formData.deliveryMode,
+    dress_name: formData.dressName,
+    dress_code: formData.dressCode,
+    dress_type: formData.dressType,
+    dress_category: formData.dressCategory,
+    dress_unit: formData.dressUnit,
+    dress_rate: Number(formData.dressRate || 0),
+    quantity: Number(formData.quantity || 0),
+    remarks: formData.remarks,
+    sections,
+    section_totals: sectionTotals,
+    grand_total: grandTotal,
+    status: "ACTIVE",
+  };
+
+  try {
+    setIsSubmitting(true);
+
+    // 3. RETRIEVE THE TOKEN (Crucial for fixing 401)
+    const token = localStorage.getItem("token"); 
+
+    if (!token) {
+      showToast("Authentication token missing. Please login again.", "error");
       return;
     }
 
-    const hasRows = Object.values(sections).some((rows) => rows.length > 0);
-    if (!hasRows) {
-      showToast("Add at least one cost item before submitting.", "error");
-      return;
-    }
+    // 4. THE UPDATED FETCH CALL
+    const response = await fetch(
+      buildApiUrl(editId ? `/api/cost-estimations/${editId}/` : "/api/cost-estimations/"),
+      {
+        method: editId ? "PUT" : "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          // The "Token" prefix must match your Django's TokenAuthentication
+          "Authorization": `Token ${token}` 
+        },
+        body: JSON.stringify(payload),
+      }
+    );
 
-    const payload = {
-      estimation_no: formData.costSheetNo,
-      rfq_no: formData.rfqNo,
-      registered_date: formData.registeredDate,
-      delivery_date: formData.deliveryDate || null,
-      client_name: formData.clientName,
-      company_name: formData.companyName,
-      phone_no: formData.phoneNo,
-      email: formData.email,
-      delivery_location: formData.deliveryLocation,
-      payment_terms: formData.paymentTerms,
-      tax_preference: formData.taxPreference,
-      delivery_mode: formData.deliveryMode,
-      dress_name: formData.dressName,
-      dress_code: formData.dressCode,
-      dress_type: formData.dressType,
-      dress_category: formData.dressCategory,
-      dress_unit: formData.dressUnit,
-      dress_rate: Number(formData.dressRate || 0),
-      quantity: Number(formData.quantity || 0),
-      remarks: formData.remarks,
-      sections,
-      section_totals: sectionTotals,
-      grand_total: grandTotal,
-      status: "ACTIVE",
-    };
-
-    try {
-      setIsSubmitting(true);
-      const response = await fetch(
-        buildApiUrl(editId ? `/api/cost-estimations/${editId}/` : "/api/cost-estimations/"),
-        {
-          method: editId ? "PUT" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        if (errorData?.estimation_no?.length) {
-          showToast("Estimation number already exists. Please try again.", "error");
-          return;
-        }
-        showToast("Failed to save cost estimation.", "error");
+    // 5. Handle Response
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      
+      // Handle Specific 401 Error
+      if (response.status === 401) {
+        showToast("Your session has expired. Please login again.", "error");
         return;
       }
 
-      showToast(editId ? "Cost estimation updated successfully." : "Cost estimation saved successfully.", "success");
-      if (editId) {
-        window.setTimeout(() => router.push("/sales-services/cost-sheet/list"), 600);
-      } else if (!editId) {
-        handleReset();
+      if (errorData?.estimation_no?.length) {
+        showToast("Estimation number already exists. Please try again.", "error");
+        return;
       }
-    } catch {
-      showToast(`Network error while ${editId ? "updating" : "saving"} cost estimation.`, "error");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
+      showToast("Failed to save cost estimation.", "error");
+      return;
+    }
+
+    // 6. Success Logic
+    showToast(
+      editId ? "Cost estimation updated successfully." : "Cost estimation saved successfully.", 
+      "success"
+    );
+
+    if (editId) {
+      window.setTimeout(() => router.push("/sales-services/cost-sheet/list"), 600);
+    } else {
+      handleReset();
+    }
+
+  } catch (error) {
+    console.error("Submission Error:", error);
+    showToast(`Network error while ${editId ? "updating" : "saving"} cost estimation.`, "error");
+  } finally {
+    setIsSubmitting(false);
+  }
+};
   const summaryRows = [
     { label: "Raw Material Total", value: sectionTotals.rawMaterial || 0 },
     { label: "Services Total", value: sectionTotals.productionCost || 0 },
@@ -674,7 +723,7 @@ export default function ClothSalesCostSheetPage() {
 
   return (
     <AppPageShell
-      contentClassName="mx-auto w-full max-w-[1100px] px-3 py-2"
+      contentClassName="mx-auto w-full max-w-[1240px] px-3 py-2"
     >
           {toast ? (
             <div
@@ -788,7 +837,7 @@ export default function ClothSalesCostSheetPage() {
                     <button
                       type="button"
                       onClick={handleSubmit}
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || (editId ? !canManageCostEstimation(authRole) : !canCreateCostEstimation(authRole))}
                       className="rounded-[10px] bg-[#34b556] px-6 py-2.5 text-[13px] font-bold text-white shadow-[0_8px_18px_rgba(52,181,86,0.25)] disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {isSubmitting ? (editId ? "UPDATING..." : "SAVING...") : (editId ? "UPDATE" : "SUBMIT")}

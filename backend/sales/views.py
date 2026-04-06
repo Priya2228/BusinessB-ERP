@@ -51,6 +51,8 @@ from django.shortcuts import render
 # CORRECT IMPORT
 from rest_framework.authtoken.models import Token
 from .website_profile import get_website_profile
+from authentication.models import UserProfile
+from authentication.rbac import has_any_role, has_role
 
 ITEM_BOOLEAN_FIELDS = [
     'is_stock',
@@ -360,7 +362,12 @@ def dispatch_detail_update_delete(request, pk):
 
 
 @api_view(['GET', 'POST'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
 def quotation_list_create(request):
+    if request.method == 'POST' and has_role(request.user, UserProfile.ROLE_CLIENT):
+        return Response({'detail': 'Client users cannot create quotations.'}, status=status.HTTP_403_FORBIDDEN)
+
     if request.method == 'GET':
         quotations = Quotation.objects.all().prefetch_related('items')
         for quotation in quotations:
@@ -415,8 +422,22 @@ def purchase_order_detail_update_delete(request, pk):
 
 
 @api_view(['GET', 'PUT', 'DELETE'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
 def quotation_detail_update_delete(request, pk):
     quotation = get_object_or_404(Quotation.objects.prefetch_related('items'), pk=pk)
+
+    if request.method == 'DELETE' and has_role(request.user, UserProfile.ROLE_CLIENT):
+        return Response({'detail': 'Client users cannot delete quotations.'}, status=status.HTTP_403_FORBIDDEN)
+
+    if request.method == 'PUT' and has_role(request.user, UserProfile.ROLE_CLIENT):
+        allowed_keys = {'client_status', 'client_response_remarks'}
+        submitted_keys = set(request.data.keys())
+        if not submitted_keys.issubset(allowed_keys):
+            return Response(
+                {'detail': 'Client users can only update client response fields.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
     if request.method == 'GET':
         QuotationApproval.objects.get_or_create(quotation=quotation)
@@ -680,7 +701,12 @@ def sales_service_detail_update_delete(request, pk):
 
 
 @api_view(['GET', 'POST'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
 def cost_estimation_list_create(request):
+    if request.method == 'POST' and has_role(request.user, UserProfile.ROLE_CLIENT):
+        return Response({'detail': 'Client users cannot create cost estimations.'}, status=status.HTTP_403_FORBIDDEN)
+
     if request.method == 'GET':
         estimations = CostEstimation.objects.all()
         serializer = CostEstimationSerializer(estimations, many=True, context={'request': request})
@@ -695,8 +721,16 @@ def cost_estimation_list_create(request):
 
 
 @api_view(['GET', 'PUT', 'DELETE'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
 def cost_estimation_detail_update_delete(request, pk):
     estimation = get_object_or_404(CostEstimation, pk=pk)
+
+    if request.method in {'PUT', 'DELETE'} and has_role(request.user, UserProfile.ROLE_CLIENT):
+        return Response(
+            {'detail': 'Client users cannot modify cost estimations.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
 
     if request.method == 'GET':
         CostEstimationApproval.objects.get_or_create(cost_estimation=estimation)
@@ -754,6 +788,8 @@ def cost_estimation_approval_update(request, pk):
     action = request.data.get('action')
 
     if action == 'send_to_head':
+        if not has_any_role(request.user, [UserProfile.ROLE_USER, UserProfile.ROLE_SALES_LEAD, UserProfile.ROLE_DEPT_HEAD, UserProfile.ROLE_MD]):
+            return Response({'detail': 'You do not have permission to send this estimation for approval.'}, status=status.HTTP_403_FORBIDDEN)
         approval.sent_to_head = True
         approval.sent_to_head_at = timezone.now()
         approval.head_status = 'pending'
@@ -768,6 +804,8 @@ def cost_estimation_approval_update(request, pk):
         return Response(CostEstimationApprovalSerializer(approval).data)
 
     if action == 'head_review':
+        if not has_any_role(request.user, [UserProfile.ROLE_DEPT_HEAD, UserProfile.ROLE_MD]):
+            return Response({'detail': 'Only Department Head or MD can review this stage.'}, status=status.HTTP_403_FORBIDDEN)
         review_status = request.data.get('status')
         if review_status not in {'approved', 'declined'}:
             return Response({'status': ['Status must be approved or declined.']}, status=status.HTTP_400_BAD_REQUEST)
@@ -789,6 +827,8 @@ def cost_estimation_approval_update(request, pk):
         return Response(CostEstimationApprovalSerializer(approval).data)
 
     if action == 'md_review':
+        if not has_any_role(request.user, [UserProfile.ROLE_MD]):
+            return Response({'detail': 'Only MD can complete this review.'}, status=status.HTTP_403_FORBIDDEN)
         if approval.head_status != 'approved':
             return Response({'detail': 'Head approval required first.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -820,6 +860,8 @@ def quotation_approval_update(request, pk):
     action = request.data.get('action')
 
     if action == 'send_to_head':
+        if not has_any_role(request.user, [UserProfile.ROLE_USER, UserProfile.ROLE_SALES_LEAD, UserProfile.ROLE_SALES_HEAD, UserProfile.ROLE_DEPT_HEAD, UserProfile.ROLE_MD]):
+            return Response({'detail': 'You do not have permission to send this quotation for approval.'}, status=status.HTTP_403_FORBIDDEN)
         approval.sent_to_head = True
         approval.sent_to_head_at = timezone.now()
         approval.head_status = 'pending'
@@ -834,6 +876,8 @@ def quotation_approval_update(request, pk):
         return Response(CostEstimationApprovalSerializer(approval).data)
 
     if action == 'head_review':
+        if not has_any_role(request.user, [UserProfile.ROLE_SALES_HEAD, UserProfile.ROLE_MD]):
+            return Response({'detail': 'Only Sales Head or MD can review this stage.'}, status=status.HTTP_403_FORBIDDEN)
         review_status = request.data.get('status')
         if review_status not in {'approved', 'declined'}:
             return Response({'status': ['Status must be approved or declined.']}, status=status.HTTP_400_BAD_REQUEST)
@@ -855,6 +899,8 @@ def quotation_approval_update(request, pk):
         return Response(CostEstimationApprovalSerializer(approval).data)
 
     if action == 'md_review':
+        if not has_any_role(request.user, [UserProfile.ROLE_MD]):
+            return Response({'detail': 'Only MD can complete this review.'}, status=status.HTTP_403_FORBIDDEN)
         if approval.head_status != 'approved':
             return Response({'detail': 'Head approval required first.'}, status=status.HTTP_400_BAD_REQUEST)
 
