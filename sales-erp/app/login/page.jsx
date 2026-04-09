@@ -150,8 +150,10 @@ export default function LoginPage() {
 
         <div className={styles.formPanel}>
           <div className={styles.formBox}>
-            <h2 className={styles.teamTitle}>Adhoc Demo Team</h2>
-            <p className={styles.subtitle}>Login to your account</p>
+            <h2 className={styles.teamTitle}>Document Controller Access</h2>
+            <p className={styles.subtitle}>
+              Enter your official document controller credentials to continue.
+            </p>
 
             <form className={styles.form} onSubmit={handleLogin}>
               {error && <p className={styles.errorMessage}>{error}</p>}
@@ -206,6 +208,7 @@ export default function LoginPage() {
                 {isLoading ? <Loader2 className={styles.spinner} size={18} /> : "LOGIN"}
               </button>
             </form>
+           
           </div>
 
           <p className={styles.footer}>

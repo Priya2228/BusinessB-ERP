@@ -4,6 +4,7 @@ from rest_framework.authentication import TokenAuthentication
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.exceptions import ValidationError
 from django.utils import timezone
 from .models import (
     Dispatchdetails,
@@ -22,6 +23,8 @@ from .models import (
     ThreadworkFinishingOption,
     PackagingLogisticsOption,
     MiscellaneousOption,
+    JobCard,
+    OperationHeadRegistration,
 )
 from .serializers import (
     DispatchdetailsSerializer,
@@ -39,20 +42,33 @@ from .serializers import (
     ThreadworkFinishingOptionSerializer,
     PackagingLogisticsOptionSerializer,
     MiscellaneousOptionSerializer,
+    JobCardSerializer,
+    OperationHeadRegistrationSerializer,
 )
 import json
 import re
+import secrets
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import get_object_or_404
 from django.http import JsonResponse
 # Remove SalesInvoice and use Dispatchdetails
 from .models import Dispatchdetails, InvoiceItem
 from django.shortcuts import render
+from django.contrib.auth import get_user_model
 # CORRECT IMPORT
 from rest_framework.authtoken.models import Token
+from .completion_utils import ensure_completion_cost_estimation
 from .website_profile import get_website_profile
 from authentication.models import UserProfile
 from authentication.rbac import has_any_role, has_role
+
+def generate_unique_grn():
+    for _ in range(5):
+        now = timezone.now()
+        candidate = f"GRN-{now.strftime('%Y%m%d%H%M%S')}-{secrets.randbelow(10000):04d}"
+        if not JobCard.objects.filter(grn_no=candidate).exists():
+            return candidate
+    raise ValidationError("Unable to generate a unique GRN number.")
 
 ITEM_BOOLEAN_FIELDS = [
     'is_stock',
@@ -62,6 +78,62 @@ ITEM_BOOLEAN_FIELDS = [
     'need_warranty',
     'need_serial_no',
 ]
+
+
+@api_view(['GET'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def sales_leads_list(request):
+    User = get_user_model()
+    leads = (
+        User.objects.filter(profile__role=UserProfile.ROLE_SALES_LEAD)
+        .select_related("profile")
+        .order_by("username")
+    )
+
+    response = []
+    for user in leads:
+        profile = getattr(user, "profile", None)
+        response.append(
+            {
+                "id": user.id,
+                "username": user.username,
+                "full_name": user.get_full_name(),
+                "designation": profile.designation if profile else "",
+                "role": profile.role if profile else "",
+            }
+        )
+
+    return Response(response)
+
+
+@api_view(['GET'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def supervisors_list(request):
+    User = get_user_model()
+    supervisors = (
+        User.objects.filter(
+            profile__role__in=[
+                UserProfile.ROLE_OPERATION_HEAD,
+                UserProfile.ROLE_SITE_ENGINEER,
+            ]
+        )
+        .select_related("profile")
+        .order_by("username")
+    )
+    response = []
+    for user in supervisors:
+        profile = getattr(user, "profile", None)
+        response.append(
+            {
+                "id": user.id,
+                "username": user.username,
+                "full_name": user.get_full_name(),
+                "designation": profile.designation if profile else "",
+            }
+        )
+    return Response(response)
 
 QUOTATION_TERMS_OPTIONS = [
     {
@@ -421,6 +493,102 @@ def purchase_order_detail_update_delete(request, pk):
     return Response({'message': 'Deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
 
 
+@api_view(['GET', 'POST'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def jobcard_list_create(request):
+    if request.method == 'GET':
+        jobcards = JobCard.objects.all()
+        serializer = JobCardSerializer(jobcards, many=True, context={'request': request})
+        return Response(serializer.data)
+
+    serializer = JobCardSerializer(data=request.data, context={'request': request})
+    if serializer.is_valid():
+        jobcard = serializer.save()
+        return Response(JobCardSerializer(jobcard, context={'request': request}).data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET', 'PUT', 'DELETE'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def jobcard_detail_update_delete(request, pk):
+    jobcard = get_object_or_404(JobCard, pk=pk)
+
+    if request.method == 'GET':
+        return Response(JobCardSerializer(jobcard, context={'request': request}).data)
+
+    if request.method == 'PUT':
+        serializer = JobCardSerializer(jobcard, data=request.data, partial=True, context={'request': request})
+        if serializer.is_valid():
+            jobcard = serializer.save()
+            return Response(JobCardSerializer(jobcard, context={'request': request}).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    jobcard.delete()
+    return Response({'message': 'Deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['POST'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def jobcard_generate_grn(request, pk):
+    jobcard = get_object_or_404(JobCard, pk=pk)
+    if jobcard.grn_no:
+        return Response({'grn_no': jobcard.grn_no})
+    grn_no = generate_unique_grn()
+    jobcard.grn_no = grn_no
+    jobcard.save(update_fields=['grn_no'])
+    return Response({'grn_no': grn_no})
+
+
+@api_view(['GET', 'POST'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def operation_head_registration_list_create(request):
+    if request.method == 'GET':
+        records = OperationHeadRegistration.objects.all()
+        serializer = OperationHeadRegistrationSerializer(records, many=True, context={'request': request})
+        return Response(serializer.data)
+
+    serializer = OperationHeadRegistrationSerializer(data=request.data, context={'request': request})
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET', 'PUT', 'DELETE'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def operation_head_registration_detail_update_delete(request, pk):
+    record = get_object_or_404(OperationHeadRegistration, pk=pk)
+
+    if request.method == 'GET':
+        serializer = OperationHeadRegistrationSerializer(record, context={'request': request})
+        return Response(serializer.data)
+
+    if request.method in ['PUT', 'PATCH']:
+        serializer = OperationHeadRegistrationSerializer(record, data=request.data, partial=True, context={'request': request})
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    record.delete()
+    return Response({'detail': 'Deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['POST'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def operation_head_registration_notify_supervisor(request, pk):
+    record = get_object_or_404(OperationHeadRegistration, pk=pk)
+    record.notified_supervisor = True
+    record.save(update_fields=['notified_supervisor'])
+    return Response({'detail': 'Supervisor notified'})
+
+
 @api_view(['GET', 'PUT', 'DELETE'])
 @authentication_classes([TokenAuthentication])
 @permission_classes([IsAuthenticated])
@@ -681,7 +849,7 @@ def sales_service_list_create(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-@api_view(['GET', 'PUT', 'DELETE'])
+@api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
 def sales_service_detail_update_delete(request, pk):
     item = get_object_or_404(SalesServiceRequest, pk=pk)
 
@@ -689,7 +857,7 @@ def sales_service_detail_update_delete(request, pk):
         serializer = SalesServiceRequestSerializer(item, context={'request': request})
         return Response(serializer.data)
 
-    if request.method == 'PUT':
+    if request.method in ('PUT', 'PATCH'):
         serializer = SalesServiceRequestSerializer(item, data=request.data, partial=True, context={'request': request})
         if serializer.is_valid():
             serializer.save()
@@ -718,6 +886,18 @@ def cost_estimation_list_create(request):
         CostEstimationApproval.objects.get_or_create(cost_estimation=estimation)
         return Response(CostEstimationSerializer(estimation, context={'request': request}).data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def ensure_completion_cost_estimations(request):
+    if not has_any_role(request.user, [UserProfile.ROLE_ADMIN, UserProfile.ROLE_DEPT_HEAD, UserProfile.ROLE_MD]):
+        return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+    completions = SalesServiceRequest.objects.filter(rfq_category=SalesServiceRequest.RFQ_CATEGORY_COMPLETION)
+    for service in completions:
+        ensure_completion_cost_estimation(service)
+    return Response({'status': 'ok'})
 
 
 @api_view(['GET', 'PUT', 'DELETE'])

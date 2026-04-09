@@ -6,7 +6,7 @@ import { Eye, Pencil, Plus, Trash2 } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 import AppPageShell from "../../components/AppPageShell";
 import { buildApiUrl } from "../../utils/api";
-import { getApprovalRecord, isFullyApproved } from "../approvalWorkflow";
+import { getApprovalRecord, getStageLabel, isFullyApproved } from "../approvalWorkflow";
 import { canCreateRfq, canManageRfq, getStoredAuthState } from "../../utils/rbac";
 
 const actionButtonClassName =
@@ -23,6 +23,7 @@ export default function RfqListPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [authRole, setAuthRole] = useState("");
+  const [completionSendingId, setCompletionSendingId] = useState(null);
 
   const getAuthHeaders = () => {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -98,16 +99,42 @@ export default function RfqListPage() {
     toast.success("Attachment opened successfully.");
   };
 
+  const handleCompletionRequest = async (row) => {
+    try {
+      setCompletionSendingId(row.id);
+      const response = await fetch(buildApiUrl(`/api/sales-services/${row.id}/`), {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({ rfq_category: "Quote of Completion" }),
+      });
+
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => ({}));
+        throw new Error(errorPayload.detail || "Failed to request completion approval.");
+      }
+
+      toast.success("Quote of Completion request sent.");
+      await fetchRows();
+    } catch (err) {
+      toast.error(err?.message || "Network error while requesting completion.");
+    } finally {
+      setCompletionSendingId(null);
+    }
+  };
+
   return (
     <AppPageShell
-      contentClassName="mx-auto w-full max-w-[1100px] px-3 py-2"
+      contentClassName="mx-auto w-full max-w-[1240px] px-3 py-2"
     >
           <Toaster position="top-right" />
               <div className="mt-3 mx-auto max-w-[1180px] rounded-[20px] border border-sky-100 bg-[#fbfdff] p-4 shadow-[0_8px_28px_rgba(15,23,42,0.05)]">
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-col justify-between gap-3 md:flex-row">
                   <div>
                     <h1 className="text-[16px] font-bold text-slate-900">Request for quotation List</h1>
-                
+                  
                   </div>
                   {canCreateRfq(authRole) ? (
                     <button
@@ -136,20 +163,26 @@ export default function RfqListPage() {
                             <th className="border-b border-slate-200 px-4 py-3 font-semibold">RFQ Information</th>
                             <th className="border-b border-slate-200 px-4 py-3 font-semibold">RFQ Scope</th>
                             <th className="border-b border-slate-200 px-4 py-3 font-semibold">Planning</th>
+                              <th className="border-b border-slate-200 px-4 py-3 font-semibold">Category</th>
                             <th className="border-b border-slate-200 px-4 py-3 font-semibold">Actions</th>
                           </tr>
                         </thead>
                         <tbody className="bg-white">
                           {rows.map((row) => {
                             const linkedEstimation = estimationRows.find((estimation) => estimation.rfq_no === row.rfq_no);
-                            const isLocked = isFullyApproved(getApprovalRecord(linkedEstimation?.approval_workflow));
+                            const approvalRecord = getApprovalRecord(linkedEstimation?.approval_workflow);
+                            const headStageLabel = getStageLabel(approvalRecord.head.status, "WAITING");
+                            const mdStageLabel = getStageLabel(approvalRecord.md.status, "WAITING");
+                            const isLocked = isFullyApproved(approvalRecord);
                             const canManageRow = canManageRfq(authRole);
+                            const isCompletion = (row.rfq_category || "").toLowerCase() === "quote of completion";
 
                             return (
                             <tr key={row.id} className="align-top">
                               <td className="border-b border-slate-100 px-4 py-3">
                                 <p className="font-semibold text-slate-900">{row.rfq_no || "-"}</p>
                                 <p className="mt-1">RFQ Date: {formatDate(row.registered_date)}</p>
+                                
                               </td>
                               <td className="border-b border-slate-100 px-4 py-3">
                                 <p className="font-semibold text-slate-900">Mode: {row.enquiry_mode || (row.email ? "Email" : row.phone_no ? "Phone" : "Verbal")}</p>
@@ -171,6 +204,26 @@ export default function RfqListPage() {
                                 <p className="mt-1">Start: {formatDate(row.plan_start_date)}</p>
                                 <p className="mt-1">End: {formatDate(row.plan_end_date || row.expected_deadline)}</p>
                                 <p className="mt-1">Remarks: {row.scope_of_work || "-"}</p>
+                              </td>
+                              <td className="border-b border-slate-100 px-4 py-3">
+                                <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">
+                                  Category
+                                </div>
+                                {isCompletion ? (
+                                  <div className="mt-2">
+                                    <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-600 shadow-sm">
+                                      Quote of Completion
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCompletionRequest(row)}
+                                    disabled={completionSendingId === row.id}
+                                    className="mt-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-600 shadow-sm transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400">
+                                    {completionSendingId === row.id ? "Sending..." : "Quote of Assessment"}
+                                  </button>
+                                )}
                               </td>
                               <td className="border-b border-slate-100 px-4 py-3">
                                 <div className="flex items-center gap-2">

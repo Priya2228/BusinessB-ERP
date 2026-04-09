@@ -8,6 +8,7 @@ import AppPageShell from "../components/AppPageShell";
 import { buildApiUrl } from "../utils/api";
 
 const today = new Date().toISOString().slice(0, 10);
+const PURCHASE_ORDER_TOAST_KEY = "majesticsales_purchase_order_toast";
 
 const createInitialForm = () => ({
   quotationNo: "",
@@ -51,6 +52,15 @@ export default function PurchaseOrderPage() {
   const getAuthHeaders = () => {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
     return token ? { Authorization: `Token ${token}` } : {};
+  };
+ 
+  const persistPurchaseOrderToast = (message, type = "success") => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(PURCHASE_ORDER_TOAST_KEY, JSON.stringify({ message, type }));
+    } catch {
+      /* ignore */
+    }
   };
 
   const selectedQuotation = useMemo(
@@ -203,7 +213,13 @@ export default function PurchaseOrderPage() {
       }
 
       const savedPurchaseOrder = await response.json().catch(() => null);
-      toast.success(isEditMode ? "Purchase order updated successfully." : "Purchase order saved successfully.");
+      const successMessage = isEditMode
+        ? "Purchase order updated successfully."
+        : "Purchase order saved successfully.";
+      toast.success(successMessage);
+      if (!isEditMode) {
+        persistPurchaseOrderToast(successMessage);
+      }
       if (isEditMode && savedPurchaseOrder?.id) {
         router.replace(`/purchase?editId=${savedPurchaseOrder.id}`);
       }

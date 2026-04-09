@@ -11,6 +11,10 @@ class UserProfile(models.Model):
     ROLE_SALES_HEAD = "saleshead"
     ROLE_DEPT_HEAD = "depthead"
     ROLE_MD = "md"
+    ROLE_DOCUMENT_CONTROLLER = "documentcontroller"
+    ROLE_OPERATION_HEAD = "operationhead"
+    ROLE_SITE_ENGINEER = "siteengineer"
+    ROLE_STORE_QUEUE = "storequeue"
 
     ROLE_CHOICES = [
         (ROLE_USER, "User"),
@@ -19,6 +23,10 @@ class UserProfile(models.Model):
         (ROLE_SALES_HEAD, "Sales Head"),
         (ROLE_DEPT_HEAD, "Department Head"),
         (ROLE_MD, "MD"),
+        (ROLE_DOCUMENT_CONTROLLER, "Document Controller"),
+        (ROLE_OPERATION_HEAD, "Operation Head"),
+        (ROLE_SITE_ENGINEER, "Site Engineer"),
+        (ROLE_STORE_QUEUE, "Store Manager"),
     ]
 
     user = models.OneToOneField(

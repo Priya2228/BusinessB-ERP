@@ -1,7 +1,15 @@
 from decimal import Decimal, ROUND_HALF_UP
 import json
+import os
+import re
+import secrets
+from datetime import datetime
+from django.contrib.auth import get_user_model
+from django.utils import timezone
 from rest_framework import serializers
 from inventory.services import get_tax_details, get_tax_rate, normalize_region
+User = get_user_model()
+
 from .models import (
     InvoiceItem,
     Dispatchdetails,
@@ -20,7 +28,10 @@ from .models import (
     ThreadworkFinishingOption,
     PackagingLogisticsOption,
     MiscellaneousOption,
+    JobCard,
+    OperationHeadRegistration,
 )
+from .completion_utils import ensure_completion_cost_estimation
 
 
 def generate_unique_quotation_code():
@@ -55,6 +66,20 @@ def generate_unique_purchase_order_no():
     return f"PO{highest_number + 1:03d}"
 
 
+def generate_unique_jobcard_no():
+    existing_codes = JobCard.objects.values_list("jobcard_no", flat=True)
+    highest_number = 0
+
+    for code in existing_codes:
+        if not code:
+            continue
+        digits = re.findall(r"\d+", code)
+        if digits:
+            highest_number = max(highest_number, int(digits[-1]))
+
+    return f"JC-{highest_number + 1:04d}"
+
+
 def resolve_item_category(validated_data):
     item_category = validated_data.pop('item_category', None)
     if item_category:
@@ -87,6 +112,32 @@ def apply_tax_rule(validated_data):
         validated_data['amount'] = float(net_amount.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
 
     return validated_data
+
+
+class FlexibleDateField(serializers.DateField):
+    def to_internal_value(self, value):
+        normalized = self._normalize_value(value)
+        if normalized is None:
+            if self.allow_null:
+                return None
+            self.fail("null")
+        return super().to_internal_value(normalized)
+
+    def _normalize_value(self, value):
+        if isinstance(value, datetime):
+            return value.date()
+
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return None
+            if "T" in stripped:
+                return stripped.split("T", 1)[0]
+            if " " in stripped:
+                return stripped.split(" ", 1)[0]
+            return stripped
+
+        return value
 
 class InvoiceItemSerializer(serializers.ModelSerializer):
     region = serializers.CharField(write_only=True, required=False, allow_blank=True)
@@ -294,6 +345,8 @@ class ItemSerializer(serializers.ModelSerializer):
 
 class SalesServiceRequestSerializer(serializers.ModelSerializer):
     email_attachment = serializers.FileField(required=False, allow_null=True)
+    assigned_to_username = serializers.SerializerMethodField(read_only=True)
+    assigned_to_designation = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = SalesServiceRequest
@@ -308,6 +361,53 @@ class SalesServiceRequestSerializer(serializers.ModelSerializer):
                 request.build_absolute_uri(attachment_url) if request is not None else attachment_url
             )
         return data
+
+    def get_assigned_to_username(self, instance):
+        return instance.assigned_to.username if instance.assigned_to else ""
+
+    def get_assigned_to_designation(self, instance):
+        return instance.assigned_to.profile.designation if instance.assigned_to and hasattr(instance.assigned_to, "profile") else ""
+
+    def _apply_category_logic(self, validated_data):
+        category = validated_data.get(
+            "rfq_category", SalesServiceRequest.RFQ_CATEGORY_STANDARD
+        )
+        provided_status = validated_data.get("approval_status")
+
+        if category == SalesServiceRequest.RFQ_CATEGORY_ASSESSMENT:
+            validated_data["skip_sales_flow"] = True
+            if not provided_status:
+                validated_data["approval_status"] = SalesServiceRequest.APPROVAL_STATUS_PENDING_HEAD
+        elif category == SalesServiceRequest.RFQ_CATEGORY_COMPLETION:
+            validated_data["skip_sales_flow"] = True
+            validated_data["approval_status"] = SalesServiceRequest.APPROVAL_STATUS_NOT_REQUIRED
+        else:
+            validated_data["skip_sales_flow"] = False
+            if not provided_status:
+                validated_data["approval_status"] = SalesServiceRequest.APPROVAL_STATUS_NOT_REQUIRED
+
+        return validated_data
+
+    def _ensure_completion_cost_estimation(self, service_request):
+        ensure_completion_cost_estimation(service_request)
+
+    def create(self, validated_data):
+        validated_data = self._apply_category_logic(validated_data)
+        instance = super().create(validated_data)
+        if instance.rfq_category == SalesServiceRequest.RFQ_CATEGORY_COMPLETION:
+            self._ensure_completion_cost_estimation(instance)
+        return instance
+
+    def update(self, instance, validated_data):
+        prev_category = instance.rfq_category
+        validated_data = self._apply_category_logic(validated_data)
+        instance = super().update(instance, validated_data)
+        if instance.rfq_category == SalesServiceRequest.RFQ_CATEGORY_COMPLETION:
+            self._ensure_completion_cost_estimation(instance)
+        elif prev_category == SalesServiceRequest.RFQ_CATEGORY_COMPLETION and instance.rfq_category != SalesServiceRequest.RFQ_CATEGORY_COMPLETION:
+            # No extra cleanup for now
+            pass
+        return instance
 
 
 class CostEstimationApprovalSerializer(serializers.ModelSerializer):
@@ -393,3 +493,156 @@ class PackagingLogisticsOptionSerializer(CostEstimationOptionSerializer):
 class MiscellaneousOptionSerializer(CostEstimationOptionSerializer):
     class Meta(CostEstimationOptionSerializer.Meta):
         model = MiscellaneousOption
+
+
+class JobCardSerializer(serializers.ModelSerializer):
+    purchase_order_id = serializers.PrimaryKeyRelatedField(
+        queryset=PurchaseOrder.objects.all(),
+        source="purchase_order",
+        allow_null=True,
+        required=False,
+        write_only=True,
+    )
+    purchase_order_info = serializers.SerializerMethodField()
+    supervisor_id = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(),
+        source="supervisor",
+        allow_null=True,
+        required=False,
+        write_only=True,
+    )
+    supervisor_info = serializers.SerializerMethodField()
+
+    class Meta:
+        model = JobCard
+        fields = "__all__"
+        read_only_fields = ["created_at", "updated_at", "purchase_order_info"]
+
+    def create(self, validated_data):
+        if not validated_data.get("jobcard_no"):
+            validated_data["jobcard_no"] = generate_unique_jobcard_no()
+        if not validated_data.get("jobcard_date"):
+            validated_data["jobcard_date"] = timezone.now().date()
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        if not validated_data.get("jobcard_no"):
+            validated_data["jobcard_no"] = instance.jobcard_no
+        return super().update(instance, validated_data)
+
+    def get_purchase_order_info(self, obj):
+        po = obj.purchase_order
+        if not po:
+            return None
+        request = self.context.get("request")
+        attachment_url = None
+        if po.file_attachment:
+            attachment_url = (
+                request.build_absolute_uri(po.file_attachment.url) if request else po.file_attachment.url
+            )
+        return {
+            "id": po.id,
+            "po_no": po.po_no,
+            "po_date": po.po_date,
+            "po_received_date": po.po_received_date,
+            "expected_delivery_date": po.expected_delivery_date,
+            "rfq_no": po.rfq_no,
+            "quotation_no": po.quotation_no,
+            "attention": po.attention,
+            "cost_estimation_no": po.cost_estimation_no,
+            "file_name": os.path.basename(po.file_attachment.name) if po.file_attachment else None,
+            "file_attachment": attachment_url,
+        }
+
+    def get_supervisor_info(self, obj):
+        supervisor = obj.supervisor
+        if not supervisor:
+            return None
+        profile = getattr(supervisor, "profile", None)
+        return {
+            "id": supervisor.id,
+            "username": supervisor.username,
+            "full_name": supervisor.get_full_name(),
+            "designation": profile.designation if profile else "",
+        }
+
+
+class OperationHeadRegistrationSerializer(serializers.ModelSerializer):
+    operation_no = serializers.CharField(required=False, allow_blank=True)
+    jobcard_id = serializers.PrimaryKeyRelatedField(
+        queryset=JobCard.objects.all(),
+        source="jobcard",
+        allow_null=True,
+        required=False,
+        write_only=True,
+    )
+    jobcard_info = serializers.SerializerMethodField()
+    shopfloor_incharge_id = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(),
+        source="shopfloor_incharge",
+        allow_null=True,
+        required=False,
+        write_only=True,
+    )
+    shopfloor_incharge_info = serializers.SerializerMethodField()
+    operation_date = FlexibleDateField(required=False, allow_null=True)
+    rfq_date = FlexibleDateField(required=False, allow_null=True)
+    cost_estimation_date = FlexibleDateField(required=False, allow_null=True)
+    po_date = FlexibleDateField(required=False, allow_null=True)
+    jobcard_date = FlexibleDateField(required=False, allow_null=True)
+    plan_start_date = FlexibleDateField(required=False, allow_null=True)
+    target_completion_date = FlexibleDateField(required=False, allow_null=True)
+    po_delivery_date = FlexibleDateField(required=False, allow_null=True)
+    expected_delivery_date = FlexibleDateField(required=False, allow_null=True)
+
+    class Meta:
+        model = OperationHeadRegistration
+        fields = "__all__"
+        read_only_fields = ["created_at", "updated_at"]
+
+    def create(self, validated_data):
+        if not validated_data.get("operation_no"):
+            validated_data["operation_no"] = self._generate_operation_no()
+        if not validated_data.get("operation_date"):
+            validated_data["operation_date"] = timezone.now().date()
+        return super().create(validated_data)
+
+    def _generate_operation_no(self):
+        base = timezone.now().strftime("OP-%y%m%d%H%M%S")
+        for _ in range(5):
+            candidate = f"{base}-{secrets.token_hex(2).upper()}"
+            if not OperationHeadRegistration.objects.filter(operation_no=candidate).exists():
+                return candidate
+        raise serializers.ValidationError(
+            {"operation_no": ["Unable to generate a unique operation number. Please try again."]}
+        )
+
+    def validate(self, attrs):
+        if self.instance:
+            if "operation_no" in attrs and not attrs["operation_no"]:
+                attrs.pop("operation_no")
+            if "operation_date" in attrs and attrs["operation_date"] is None:
+                attrs.pop("operation_date")
+        return super().validate(attrs)
+
+    def get_jobcard_info(self, obj):
+        jobcard = obj.jobcard
+        if not jobcard:
+            return None
+        return {
+            "id": jobcard.id,
+            "jobcard_no": jobcard.jobcard_no,
+            "rfq_no": jobcard.rfq_no,
+        }
+
+    def get_shopfloor_incharge_info(self, obj):
+        staff = obj.shopfloor_incharge
+        if not staff:
+            return None
+        profile = getattr(staff, "profile", None)
+        return {
+            "id": staff.id,
+            "username": staff.username,
+            "full_name": staff.get_full_name(),
+            "designation": profile.designation if profile else "",
+        }

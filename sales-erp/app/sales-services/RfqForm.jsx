@@ -8,12 +8,9 @@ import { buildApiUrl } from "../utils/api";
 import { canCreateRfq, canManageRfq, getStoredAuthState } from "../utils/rbac";
 
 const ENQUIRY_MODES = ["Email", "Phone", "Verbal"];
-
-const PLAN_RFQ_TYPES = [
-  "Verbal",
-  "Demo",
-  "Friendly"
-];
+const PLAN_RFQ_TYPES = ["Workshop", "Spare", "Onsite"];
+const RFQ_TYPES = [...PLAN_RFQ_TYPES];
+const RFQ_CATEGORIES = ["Standard", "Quote of Assessment", "Quote of Completion"];
 
 const createRfqNumber = () => {
   const timestamp = Date.now().toString().slice(-6);
@@ -39,7 +36,9 @@ const createInitialForm = () => ({
   brandingType: "",
   sizeBreakdown: "",
   scopeOfWork: "",
-  planRfqType: "",
+  rfqCategory: "",
+  assignedTo: "",
+  planRfqType: PLAN_RFQ_TYPES[0],
   planStartDate: "",
   expectedDeadline: "",
 });
@@ -198,6 +197,7 @@ export default function RfqForm() {
   const [serviceCategoryOptions, setServiceCategoryOptions] = useState([]);
   const [serviceDescriptionOptions, setServiceDescriptionOptions] = useState([]);
   const [clientOptions, setClientOptions] = useState([]);
+  const [salesLeadOptions, setSalesLeadOptions] = useState([]);
   const [authRole, setAuthRole] = useState("");
   const isEmailMode = formData.enquiryMode === "Email";
   const isPhoneMode = formData.enquiryMode === "Phone";
@@ -245,6 +245,8 @@ export default function RfqForm() {
       plan_start_date: "planStartDate",
       plan_end_date: "expectedDeadline",
       expected_deadline: "expectedDeadline",
+      rfq_category: "rfqCategory",
+      assigned_to: "assignedTo",
     };
 
     const nextErrors = {};
@@ -278,11 +280,14 @@ export default function RfqForm() {
   useEffect(() => {
     const loadFormOptions = async () => {
       try {
-        const [profileResponse, clientsResponse] = await Promise.all([
+        const [profileResponse, clientsResponse, leadsResponse] = await Promise.all([
           fetch(buildApiUrl("/api/website-company-profile/"), {
             headers: getAuthHeaders(),
           }),
           fetch(buildApiUrl("/api/sales-services/"), {
+            headers: getAuthHeaders(),
+          }),
+          fetch(buildApiUrl("/api/users/sales-leads/"), {
             headers: getAuthHeaders(),
           }),
         ]);
@@ -311,13 +316,30 @@ export default function RfqForm() {
           });
         });
 
+        const salesLeads = leadsResponse.ok ? await leadsResponse.json() : [];
+        const formattedLeadOptions = salesLeads.map((lead) => ({
+          value: String(lead.id),
+          label:
+            [lead.full_name, lead.username, lead.designation]
+              .filter(Boolean)
+              .join(" | ") || lead.username || `Lead ${lead.id}`,
+        }));
+
         setServiceCategoryOptions(nextServiceCategories);
         setServiceDescriptionOptions(nextServiceDescriptions);
         setClientOptions(Array.from(uniqueClientMap.values()));
+        setSalesLeadOptions(formattedLeadOptions);
+        setFormData((prev) => ({
+          ...prev,
+          assignedTo: prev.assignedTo || formattedLeadOptions[0]?.value || "",
+          rfqCategory: prev.rfqCategory || RFQ_CATEGORIES[0],
+          planRfqType: prev.planRfqType || PLAN_RFQ_TYPES[0],
+        }));
       } catch {
         setServiceCategoryOptions([]);
         setServiceDescriptionOptions([]);
         setClientOptions([]);
+        setSalesLeadOptions([]);
       }
     };
 
@@ -359,7 +381,9 @@ export default function RfqForm() {
           brandingType: data.branding_type || "",
           sizeBreakdown: data.size_breakdown || "",
           scopeOfWork: data.scope_of_work || "",
-          planRfqType: data.plan_rfq_type || "",
+          planRfqType: data.plan_rfq_type || PLAN_RFQ_TYPES[0],
+          rfqCategory: data.rfq_category || "",
+          assignedTo: data.assigned_to ? String(data.assigned_to) : "",
           planStartDate: data.plan_start_date || "",
           expectedDeadline: data.plan_end_date || data.expected_deadline || "",
         });
@@ -439,6 +463,8 @@ export default function RfqForm() {
     if (!formData.serviceCategory.trim()) nextErrors.serviceCategory = "Service details is required.";
     if (!formData.fabricSpecs.trim()) nextErrors.fabricSpecs = "Service description is required.";
     if (!formData.planRfqType) nextErrors.planRfqType = "Plan RFQ type is required.";
+    if (!formData.rfqCategory) nextErrors.rfqCategory = "RFQ category is required.";
+    if (!formData.assignedTo) nextErrors.assignedTo = "Assign this RFQ to a sales lead.";
     if (!formData.planStartDate) nextErrors.planStartDate = "Starting date is required.";
     if (!formData.expectedDeadline) nextErrors.expectedDeadline = "Plan end date is required.";
 
@@ -472,6 +498,8 @@ export default function RfqForm() {
     payload.append("branding_type", formData.brandingType);
     payload.append("size_breakdown", formData.sizeBreakdown.trim());
     payload.append("scope_of_work", formData.scopeOfWork.trim());
+    payload.append("rfq_category", formData.rfqCategory);
+    payload.append("assigned_to", formData.assignedTo);
     payload.append("plan_rfq_type", formData.planRfqType);
     payload.append("plan_start_date", formData.planStartDate);
     payload.append("plan_end_date", formData.expectedDeadline);
@@ -588,13 +616,37 @@ export default function RfqForm() {
           </SectionCard>
 
           <SectionCard title="RFQ Information">
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-4">
               <SelectField
                 label="Mode of Enquiry"
                 name="enquiryMode"
                 value={formData.enquiryMode}
                 onChange={handleChange}
                 options={ENQUIRY_MODES}
+              />
+              <SelectField
+                label="RFQ Type"
+                name="planRfqType"
+                value={formData.planRfqType}
+                onChange={handleChange}
+                options={RFQ_TYPES}
+                error={errors.planRfqType}
+              />
+              <SelectField
+                label="RFQ Category"
+                name="rfqCategory"
+                value={formData.rfqCategory}
+                onChange={handleChange}
+                options={RFQ_CATEGORIES}
+                error={errors.rfqCategory}
+              />
+              <SelectField
+                label="Assigned To"
+                name="assignedTo"
+                value={formData.assignedTo}
+                onChange={handleChange}
+                options={salesLeadOptions}
+                error={errors.assignedTo}
               />
               {isEmailMode ? (
                 <FormField label="Email" name="email" type="email" value={formData.email} onChange={handleChange} error={errors.email} />

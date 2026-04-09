@@ -464,6 +464,13 @@
   color: #1e64c8;
 }
 
+.helperText {
+  margin-top: 18px;
+  color: #3b4b68;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
 @media (max-width: 900px) {
   .shell {
     grid-template-columns: 1fr;

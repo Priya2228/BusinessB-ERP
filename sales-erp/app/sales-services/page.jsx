@@ -1,25 +1,84 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import { BriefcaseBusiness, Calculator, FileSpreadsheet, ReceiptText, UserCheck, X } from "lucide-react";
+import { useRouter, usePathname } from "next/navigation";
+import { BriefcaseBusiness, Calculator, ClipboardList, FileSpreadsheet, ReceiptText, UserCheck, X } from "lucide-react";
 import AppPageShell from "../components/AppPageShell";
 import { ROLES, canViewMenuItem, getStoredAuthState, normalizeRole } from "../utils/rbac";
+
+const jobcardOverlayLinks = [
+  { title: "Jobcard Queue", href: "/sales-services/jobcard" },
+  { title: "Opening Jobcard", href: "/sales-services/jobcard/list" },
+  { title: "HOD Queue", href: "/sales-services/hod-queue/list" },
+  { title: "Store Queue", href: "/sales-services/store-queue/list" },
+];
 
 const quickLinks = [
   { title: "RFQ", icon: FileSpreadsheet, href: "/sales-services/rfq", roles: [ROLES.ADMIN, ROLES.USER, ROLES.SALES_HEAD] },
   { title: "Cost Sheet", icon: Calculator, href: "/sales-services/cost-sheet", roles: [ROLES.ADMIN, ROLES.USER, ROLES.SALES_LEAD, ROLES.SALES_HEAD] },
   { title: "Quotation", icon: ReceiptText, href: "/sales-services/quotation", roles: [ROLES.ADMIN, ROLES.USER] },
   { title: "Purchase Order", icon: ReceiptText, href: "/purchase", roles: [ROLES.ADMIN, ROLES.SALES_LEAD] },
-  { title: "Dept Head Cost Estimation List", icon: UserCheck, href: "/sales-services/dept-head-cost-estimation-list", roles: [ROLES.ADMIN, ROLES.DEPT_HEAD] },
-  { title: "Dept Head Quotation List", icon: UserCheck, href: "/sales-services/head-quotation-list", roles: [ROLES.ADMIN, ROLES.DEPT_HEAD] },
-  { title: "MD Cost Estimation List", icon: BriefcaseBusiness, href: "/sales-services/md-cost-estimation-list", roles: [ROLES.ADMIN, ROLES.MD] },
-  { title: "MD Quotation List", icon: BriefcaseBusiness, href: "/sales-services/md-quotation-list", roles: [ROLES.ADMIN, ROLES.MD] },
+  {
+    title: "Dept Head Access",
+    icon: UserCheck,
+    href: "/sales-services/dept-head-cost-estimation-list",
+    roles: [ROLES.ADMIN, ROLES.DEPT_HEAD],
+    subMenu: [
+      { title: "Cost Estimation List", href: "/sales-services/dept-head-cost-estimation-list" },
+      { title: "Quotation List", href: "/sales-services/head-quotation-list" },
+      { title: "Completion List", href: "/sales-services/dept-head-completion-list" },
+    ],
+  },
+  {
+    title: "MD Access",
+    icon: BriefcaseBusiness,
+    href: "/sales-services/md-cost-estimation-list",
+    roles: [ROLES.ADMIN, ROLES.MD],
+    subMenu: [
+      { title: "Cost Estimation List", href: "/sales-services/md-cost-estimation-list" },
+      { title: "Quotation List", href: "/sales-services/md-quotation-list" },
+      { title: "Completion List", href: "/sales-services/md-completion-list" },
+    ],
+  },
+  {
+    title: "Jobcard",
+    icon: ClipboardList,
+    href: "/sales-services/jobcard",
+    roles: [ROLES.ADMIN, ROLES.DOCUMENT_CONTROLLER, ROLES.OPERATION_HEAD],
+    type: "jobcard",
+  },
+  {
+    title: "Operation Head",
+    icon: ClipboardList,
+    href: "/sales-services/operation-head-registration/create",
+    roles: [ROLES.ADMIN, ROLES.OPERATION_HEAD],
+  },
+  {
+    title: "Supervisor Queue",
+    icon: ClipboardList,
+    href: "/sales-services/supervisor-queue/list",
+    roles: [ROLES.ADMIN, ROLES.OPERATION_HEAD, ROLES.SITE_ENGINEER],
+  },
+  {
+    title: "HOD Queue",
+    icon: ClipboardList,
+    href: "/sales-services/hod-queue/list",
+    roles: [ROLES.ADMIN, ROLES.DOCUMENT_CONTROLLER, ROLES.OPERATION_HEAD, ROLES.SITE_ENGINEER],
+  },
+  {
+    title: "Store Queue",
+    icon: ClipboardList,
+    href: "/sales-services/store-queue/list",
+    roles: [ROLES.ADMIN, ROLES.DOCUMENT_CONTROLLER, ROLES.OPERATION_HEAD, ROLES.STORE_QUEUE],
+  },
 ];
 
 export default function SalesServicesPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const [authRole, setAuthRole] = useState("");
+  const [showJobcardOverlay, setShowJobcardOverlay] = useState(false);
+  const [activeMenu, setActiveMenu] = useState(null);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -35,13 +94,41 @@ export default function SalesServicesPage() {
 
   const visibleQuickLinks = useMemo(
     () =>
-      quickLinks.filter(
-        (link) =>
-          (!link.roles || link.roles.map(normalizeRole).includes(normalizeRole(authRole))) &&
-          canViewMenuItem(authRole, link.href)
-      ),
-    [authRole]
+      quickLinks.filter((link) => {
+        const hasRole =
+          !link.roles || link.roles.map(normalizeRole).includes(normalizedRole);
+        if (!hasRole) return false;
+        if (link.subMenu) return true;
+        if (link.type === "jobcard") return true;
+        return canViewMenuItem(authRole, link.href);
+      }),
+    [authRole, normalizedRole]
   );
+
+ const handleCloseOverlay = () => {
+    setShowJobcardOverlay(false);
+    setActiveMenu(null);
+    // Use replace instead of push if you want to avoid adding a "closed" state to history
+    router.replace("/Dashboard"); 
+  };
+
+  const handleQuickLinkClick = (link) => {
+    if (link.type === "jobcard") {
+      // If we are already in the jobcard section, just ensure overlay is open 
+      // instead of potentially triggering a reset.
+      setShowJobcardOverlay(true);
+      setActiveMenu(null);
+      return;
+    }
+    
+    if (link.subMenu) {
+      setActiveMenu(link);
+      setShowJobcardOverlay(false); // Ensure other overlays are closed
+      return;
+    }
+
+    router.push(link.href);
+  };
 
   return (
     <AppPageShell
@@ -70,37 +157,87 @@ export default function SalesServicesPage() {
       )}
 
       {visibleQuickLinks.length > 0 && (
-        <div className="absolute inset-0 flex items-center justify-center bg-slate-950/20 px-6">
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-transparent px-6">
           <div className="w-full max-w-[860px] rounded-[22px] border border-slate-200 bg-white px-6 py-6 shadow-[0_24px_50px_rgba(15,23,42,0.18)]">
             <div className="flex items-center justify-between">
               <h2 className="text-[16px] font-bold text-slate-900">Sales & Services - Quick Links</h2>
               <button
                 type="button"
-                onClick={() => router.push("/Dashboard")}
+                onClick={handleCloseOverlay}
                 className="flex h-9 w-9 items-center justify-center rounded-full bg-rose-400 text-white shadow-[0_10px_18px_rgba(251,113,133,0.35)]"
               >
                 <X size={16} strokeWidth={3} />
               </button>
             </div>
 
-            <div className="mt-7 grid grid-cols-2 gap-4">
-              {visibleQuickLinks.map((link) => {
-                const Icon = link.icon;
-                return (
-                  <button
-                    key={link.title}
-                    type="button"
-                    onClick={() => router.push(link.href)}
-                    className="flex items-center gap-3 rounded-[14px] border border-slate-100 bg-white px-4 py-4 text-left shadow-[0_8px_22px_rgba(15,23,42,0.07)] transition hover:-translate-y-0.5"
-                  >
-                    <span className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-sky-300 text-sky-500">
-                      <Icon size={18} />
-                    </span>
-                    <span className="text-[15px] font-semibold text-slate-700">{link.title}</span>
-                  </button>
-                );
-              })}
-            </div>
+            {!showJobcardOverlay && !activeMenu ? (
+              <div className="mt-7 grid grid-cols-2 gap-4">
+                {visibleQuickLinks.map((link) => {
+                  const Icon = link.icon;
+                  return (
+                    <div
+                      key={link.title}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => handleQuickLinkClick(link)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          handleQuickLinkClick(link);
+                        }
+                      }}
+                      className="flex items-center gap-3 rounded-[14px] border border-slate-100 bg-white px-4 py-4 text-left shadow-[0_8px_22px_rgba(15,23,42,0.07)] transition hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500"
+                    >
+                      <span className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-sky-300 text-sky-500">
+                        <Icon size={18} />
+                      </span>
+                      <span className="text-[15px] font-semibold text-slate-700">{link.title}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : showJobcardOverlay ? (
+              <div className="mt-7 space-y-6">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {jobcardOverlayLinks.map((link) => (
+                    <div
+                      key={link.title}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => {
+                        router.push(link.href);
+                        setShowJobcardOverlay(false);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          router.push(link.href);
+                          setShowJobcardOverlay(false);
+                        }
+                      }}
+                      className="flex flex-col items-start justify-between gap-3 rounded-[18px] border border-slate-200 bg-white px-4 py-5 text-left shadow-[0_10px_30px_rgba(15,23,42,0.1)] transition hover:-translate-y-[2px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500"
+                    >
+                      <span className="text-[14px] font-semibold text-slate-900">{link.title}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="mt-7 space-y-6">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {activeMenu?.subMenu?.map((option) => (
+                    <div
+                      key={option.title}
+                      role="button"
+                      onClick={() => router.push(option.href)}
+                      className="cursor-pointer rounded-[18px] border border-slate-200 bg-white px-4 py-5 shadow-[0_10px_30px_rgba(15,23,42,0.1)] transition hover:-translate-y-[2px]"
+                    >
+                      <p className="text-[14px] font-semibold text-slate-900">{option.title}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

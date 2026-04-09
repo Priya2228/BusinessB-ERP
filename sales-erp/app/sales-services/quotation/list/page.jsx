@@ -488,12 +488,7 @@ export default function QuotationListPage() {
                 <Plus size={18} />
               </button>
             ) : null}
-            <button
-              type="button"
-              className="flex h-10 w-10 items-center justify-center rounded-md border border-blue-500 bg-white text-blue-600"
-            >
-              <List size={18} />
-            </button>
+           
           </div>
         </div>
 

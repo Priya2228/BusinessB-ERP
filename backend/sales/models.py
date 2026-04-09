@@ -162,6 +162,96 @@ class PurchaseOrder(models.Model):
         return f"{self.po_no} - {self.quotation_no or self.rfq_no or 'Purchase Order'}"
 
 
+class JobCard(models.Model):
+    jobcard_no = models.CharField(max_length=60, unique=True)
+    jobcard_date = models.DateField()
+    grn_no = models.CharField(max_length=60, blank=True, null=True, unique=True)
+    purchase_order = models.ForeignKey(
+        PurchaseOrder,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="jobcards",
+    )
+    rfq_no = models.CharField(max_length=50, blank=True, null=True)
+    cost_estimation_no = models.CharField(max_length=50, blank=True, null=True)
+    client_name = models.CharField(max_length=150, blank=True, null=True)
+    company_name = models.CharField(max_length=150, blank=True, null=True)
+    attention = models.CharField(max_length=150, blank=True, null=True)
+    rfq_type = models.CharField(max_length=100, blank=True, null=True)
+    rfq_category = models.CharField(max_length=100, blank=True, null=True)
+    job_type = models.CharField(max_length=100, blank=True, null=True)
+    scope_type = models.CharField(max_length=150, blank=True, null=True)
+    scope_description = models.TextField(blank=True, null=True)
+    scope_remarks = models.TextField(blank=True, null=True)
+    planning_date = models.DateField(blank=True, null=True)
+    expected_delivery_date = models.DateField(blank=True, null=True)
+    remarks = models.TextField(blank=True, null=True)
+    supervisor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="supervised_jobcards",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name_plural = "Job Cards"
+
+    def __str__(self):
+        reference = self.rfq_no or (self.purchase_order and self.purchase_order.po_no) or "JobCard"
+        return f"{self.jobcard_no} - {reference}"
+
+
+class OperationHeadRegistration(models.Model):
+    operation_no = models.CharField(max_length=80, unique=True)
+    operation_date = models.DateField()
+    jobcard = models.ForeignKey(
+        JobCard,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="operation_registrations",
+    )
+    rfq_no = models.CharField(max_length=50, blank=True, null=True)
+    rfq_date = models.DateField(blank=True, null=True)
+    rfq_category = models.CharField(max_length=100, blank=True, null=True)
+    rfq_type = models.CharField(max_length=100, blank=True, null=True)
+    cost_estimation_no = models.CharField(max_length=50, blank=True, null=True)
+    cost_estimation_date = models.DateField(blank=True, null=True)
+    client_name = models.CharField(max_length=150, blank=True, null=True)
+    attention_name = models.CharField(max_length=150, blank=True, null=True)
+    po_no = models.CharField(max_length=50, blank=True, null=True)
+    po_date = models.DateField(blank=True, null=True)
+    jobcard_no = models.CharField(max_length=60, blank=True, null=True)
+    jobcard_date = models.DateField(blank=True, null=True)
+    plan_start_date = models.DateField(blank=True, null=True)
+    target_completion_date = models.DateField(blank=True, null=True)
+    po_delivery_date = models.DateField(blank=True, null=True)
+    expected_delivery_date = models.DateField(blank=True, null=True)
+    shopfloor_incharge = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="shopfloor_registrations",
+    )
+    remarks = models.TextField(blank=True, null=True)
+    notified_supervisor = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name_plural = "Operation Head Registrations"
+
+    def __str__(self):
+        return f"{self.operation_no} ({self.rfq_no or 'No RFQ'})"
+
+
 class Item(models.Model):
     # Basic Information
     item_code = models.CharField(max_length=50, unique=True)
@@ -216,6 +306,43 @@ class SalesServiceRequest(models.Model):
     branding_type = models.CharField(max_length=100, blank=True, null=True)
     size_breakdown = models.TextField(blank=True, null=True)
     scope_of_work = models.TextField(blank=True, null=True)
+    RFQ_CATEGORY_STANDARD = "Standard"
+    RFQ_CATEGORY_ASSESSMENT = "Quote of Assessment"
+    RFQ_CATEGORY_COMPLETION = "Quote of Completion"
+    RFQ_CATEGORY_CHOICES = [
+        (RFQ_CATEGORY_STANDARD, "Standard"),
+        (RFQ_CATEGORY_ASSESSMENT, "Quote of Assessment"),
+        (RFQ_CATEGORY_COMPLETION, "Quote of Completion"),
+    ]
+    rfq_category = models.CharField(
+        max_length=50,
+        choices=RFQ_CATEGORY_CHOICES,
+        default=RFQ_CATEGORY_STANDARD,
+        blank=True,
+    )
+    skip_sales_flow = models.BooleanField(default=False)
+    APPROVAL_STATUS_NOT_REQUIRED = "Not Required"
+    APPROVAL_STATUS_PENDING_HEAD = "Pending Head"
+    APPROVAL_STATUS_PENDING_MD = "Pending MD"
+    APPROVAL_STATUS_APPROVED = "Approved"
+    APPROVAL_STATUS_CHOICES = [
+        (APPROVAL_STATUS_NOT_REQUIRED, "Not Required"),
+        (APPROVAL_STATUS_PENDING_HEAD, "Pending Head"),
+        (APPROVAL_STATUS_PENDING_MD, "Pending MD"),
+        (APPROVAL_STATUS_APPROVED, "Approved"),
+    ]
+    approval_status = models.CharField(
+        max_length=20,
+        choices=APPROVAL_STATUS_CHOICES,
+        default=APPROVAL_STATUS_NOT_REQUIRED,
+    )
+    assigned_to = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="assigned_sales_requests",
+    )
     plan_rfq_type = models.CharField(max_length=100, blank=True, null=True)
     delivery_department = models.CharField(max_length=150, blank=True, null=True)
     plan_start_date = models.DateField(blank=True, null=True)

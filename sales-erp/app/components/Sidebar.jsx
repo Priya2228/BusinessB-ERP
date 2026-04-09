@@ -31,22 +31,61 @@ export default function Sidebar() {
   }, []);
 
   const role = normalizeRole(authState?.role);
+  const isMd = role === ROLES.MD;
   const menuItems = [
-    { name: "Dashboard", icon: <LayoutGrid size={20} />, href: "/Dashboard", roles: [ROLES.ADMIN, ROLES.USER, ROLES.SALES_LEAD, ROLES.SALES_HEAD, ROLES.DEPT_HEAD, ROLES.MD] },
+    {
+      name: "Dashboard",
+      icon: <LayoutGrid size={20} />,
+      href: "/Dashboard",
+      roles: [
+        ROLES.ADMIN,
+        ROLES.USER,
+        ROLES.SALES_LEAD,
+        ROLES.SALES_HEAD,
+        ROLES.DEPT_HEAD,
+        ROLES.MD,
+        ROLES.DOCUMENT_CONTROLLER,
+        ROLES.OPERATION_HEAD,
+        ROLES.SITE_ENGINEER,
+        ROLES.STORE_QUEUE,
+      ],
+    },
     { name: "Sales", icon: <ShoppingBag size={20} />, href: "/sales", roles: [ROLES.ADMIN, ROLES.SALES_HEAD] },
     { name: "Purchase", icon: <ShoppingCart size={20} />, href: "/purchase", roles: [ROLES.ADMIN] },
     { name: "Master", icon: <SlidersHorizontal size={20} />, href: "/master", roles: [ROLES.ADMIN] },
     { name: "Stock", icon: <Boxes size={20} />, href: "/stock", roles: [ROLES.ADMIN] },
-    { name: "Sales & Services", icon: <Briefcase size={20} />, href: "/sales-services", roles: [ROLES.ADMIN, ROLES.USER, ROLES.SALES_LEAD, ROLES.SALES_HEAD, ROLES.DEPT_HEAD, ROLES.MD] },
+    {
+      name: "Sales & Services",
+      icon: <Briefcase size={20} />,
+      href: "/sales-services",
+      roles: [
+        ROLES.ADMIN,
+        ROLES.USER,
+        ROLES.SALES_LEAD,
+        ROLES.SALES_HEAD,
+        ROLES.DEPT_HEAD,
+        ROLES.MD,
+        ROLES.DOCUMENT_CONTROLLER,
+        ROLES.OPERATION_HEAD,
+        ROLES.SITE_ENGINEER,
+        ROLES.STORE_QUEUE,
+      ],
+    },
   ];
- // --- WITH THIS STRICT CODE ---
+  const visibleMenuItems = menuItems.filter(
+    (item) => (!item.roles || item.roles.includes(role)) && canViewMenuItem(role, item.href)
+  );
 
-// STRICT FILTER: This ensures MD ONLY sees Dashboard and Sales & Services
-const visibleMenuItems = menuItems.filter((item) => {
-  if (!role) return false;
-  // This check is the "Gatekeeper". If 'md' isn't in the item.roles, it disappears.
-  return item.roles.includes(role);
-});
+  const restrictedRoles = [
+    ROLES.MD,
+    ROLES.DOCUMENT_CONTROLLER,
+    ROLES.OPERATION_HEAD,
+    ROLES.SITE_ENGINEER,
+    ROLES.STORE_QUEUE,
+  ];
+  const finalMenuItems = restrictedRoles.includes(role)
+    ? visibleMenuItems.filter((item) => ["/Dashboard", "/sales-services"].includes(item.href))
+    : visibleMenuItems;
 
   return (
     <div className="sticky top-0 flex h-screen w-[225px] flex-col bg-white p-6 shadow-sm">
@@ -56,7 +95,7 @@ const visibleMenuItems = menuItems.filter((item) => {
 
       <nav className="sidebar-scroll-hidden flex-1 overflow-y-auto">
         <ul className="space-y-6">
-          {visibleMenuItems.map((item) => {
+          {finalMenuItems.map((item) => {
             const isActive =
               pathname === item.href ||
               (item.href !== "/Dashboard" && pathname.startsWith(`${item.href}/`));
