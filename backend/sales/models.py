@@ -165,6 +165,7 @@ class PurchaseOrder(models.Model):
 class JobCard(models.Model):
     jobcard_no = models.CharField(max_length=60, unique=True)
     jobcard_date = models.DateField()
+    jobcard_status = models.CharField(max_length=60, default="Jobcard created")
     grn_no = models.CharField(max_length=60, blank=True, null=True, unique=True)
     purchase_order = models.ForeignKey(
         PurchaseOrder,
@@ -250,6 +251,216 @@ class OperationHeadRegistration(models.Model):
 
     def __str__(self):
         return f"{self.operation_no} ({self.rfq_no or 'No RFQ'})"
+
+
+class ShopfloorExecution(models.Model):
+    STATUS_DRAFT = "draft"
+    STATUS_IN_PROGRESS = "in_progress"
+    STATUS_COMPLETED = "completed"
+    STATUS_CHOICES = [
+        (STATUS_DRAFT, "Draft"),
+        (STATUS_IN_PROGRESS, "In Progress"),
+        (STATUS_COMPLETED, "Execution Complete"),
+    ]
+
+    jobcard = models.OneToOneField(
+        JobCard, related_name="shopfloor_execution", on_delete=models.CASCADE
+    )
+    status = models.CharField(max_length=32, choices=STATUS_CHOICES, default=STATUS_DRAFT)
+
+    inspection_start_date = models.DateField(blank=True, null=True)
+    inspection_end_date = models.DateField(blank=True, null=True)
+    inspection_done_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="inspection_done_executions",
+    )
+    inspection_validated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="inspection_validated_executions",
+    )
+    incoming_inspection_checklist = models.TextField(blank=True, null=True)
+    inspection_report = models.FileField(upload_to="shopfloor/inspection/report", blank=True, null=True)
+    inspection_additional_file = models.FileField(
+        upload_to="shopfloor/inspection/attachments", blank=True, null=True
+    )
+    inspection_remarks = models.TextField(blank=True, null=True)
+
+    disassembly_start_date = models.DateField(blank=True, null=True)
+    disassembly_end_date = models.DateField(blank=True, null=True)
+    disassembly_done_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="disassembly_done_executions",
+    )
+    disassembly_validated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="disassembly_validated_executions",
+    )
+
+    assessment_start_date = models.DateField(blank=True, null=True)
+    assessment_end_date = models.DateField(blank=True, null=True)
+    assessment_done_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="assessment_done_executions",
+    )
+    assessment_validated_by_qc = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="assessment_validated_qc_executions",
+    )
+    assessment_validated_by_hod = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="assessment_validated_hod_executions",
+    )
+    assessment_approved_by_hod = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="assessment_approved_hod_executions",
+    )
+    assessment_spare_repair_recommended = models.TextField(blank=True, null=True)
+    assessment_opening_report = models.FileField(
+        upload_to="shopfloor/assessment/opening_report", blank=True, null=True
+    )
+    assessment_remarks = models.TextField(blank=True, null=True)
+
+    spare_repair_start_date = models.DateField(blank=True, null=True)
+    spare_repair_end_date = models.DateField(blank=True, null=True)
+    spare_repair_done_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="spare_repair_done_executions",
+    )
+    spare_repair_validated_by_qc = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="spare_repair_validated_qc_executions",
+    )
+    spare_repair_remarks = models.TextField(blank=True, null=True)
+
+    assembly_start_date = models.DateField(blank=True, null=True)
+    assembly_end_date = models.DateField(blank=True, null=True)
+    assembly_done_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="assembly_done_executions",
+    )
+    assembly_validated_by_qc = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="assembly_validated_qc_executions",
+    )
+    assembly_validated_by_hod = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="assembly_validated_hod_executions",
+    )
+    assembly_approved_by_hod = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="assembly_approved_hod_executions",
+    )
+    assembly_testing_report = models.FileField(upload_to="shopfloor/assembly/testing", blank=True, null=True)
+    assembly_job_completion_report = models.FileField(
+        upload_to="shopfloor/assembly/job_completion", blank=True, null=True
+    )
+    assembly_final_report = models.FileField(
+        upload_to="shopfloor/assembly/final", blank=True, null=True
+    )
+    assembly_shipping_checklist = models.FileField(
+        upload_to="shopfloor/assembly/shipping", blank=True, null=True
+    )
+    assembly_remarks = models.TextField(blank=True, null=True)
+
+    opening_report = models.FileField(upload_to="shopfloor/reports/opening", blank=True, null=True)
+    testing_report = models.FileField(upload_to="shopfloor/reports/testing", blank=True, null=True)
+    job_completion_report = models.FileField(
+        upload_to="shopfloor/reports/job_completion", blank=True, null=True
+    )
+
+    notify_note = models.TextField(blank=True, null=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+        verbose_name = "Shopfloor Execution"
+        verbose_name_plural = "Shopfloor Executions"
+
+    def __str__(self):
+        return f"Shopfloor Execution - {self.jobcard.jobcard_no}"
+
+
+class ShopfloorActivityRequest(models.Model):
+    REQUEST_INTERNAL = "internal_service"
+    REQUEST_PR = "pr_request"
+    REQUEST_MATERIAL = "material_request"
+    REQUEST_TRANSPORT = "transport_request"
+    REQUEST_CHOICES = [
+        (REQUEST_INTERNAL, "Internal Service Request"),
+        (REQUEST_PR, "PR Request"),
+        (REQUEST_MATERIAL, "Material Request"),
+        (REQUEST_TRANSPORT, "Transport Request"),
+    ]
+
+    shopfloor_execution = models.ForeignKey(
+        ShopfloorExecution,
+        related_name="activity_requests",
+        on_delete=models.CASCADE,
+    )
+    request_type = models.CharField(max_length=50, choices=REQUEST_CHOICES)
+    notes = models.TextField(blank=True, null=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="shopfloor_activity_requests",
+    )
+    status = models.CharField(max_length=40, default="pending")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Shopfloor Activity Request"
+        verbose_name_plural = "Shopfloor Activity Requests"
+
+    def __str__(self):
+        return f"{self.get_request_type_display()} for {self.shopfloor_execution.jobcard.jobcard_no}"
 
 
 class Item(models.Model):

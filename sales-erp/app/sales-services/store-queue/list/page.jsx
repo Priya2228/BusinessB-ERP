@@ -57,43 +57,22 @@ const categoryLabel = (row) => {
 
 export default function StoreQueueListPage() {
   const router = useRouter();
-const [queueRows, setQueueRows] = useState([]);
-const [jobcards, setJobcards] = useState([]);
-const [loading, setLoading] = useState(true);
-const [search, setSearch] = useState("");
-const [page, setPage] = useState(1);
-const [statusMessage, setStatusMessage] = useState("");
-const [toast, setToast] = useState(null);
-const toastTimer = useRef(null);
-const [storeQueueIds, setStoreQueueIds] = useState(() =>
-  typeof window === "undefined" ? [] : loadStoreQueueIds()
-);
-const [grnMap, setGrnMap] = useState(() =>
-  typeof window === "undefined" ? {} : loadGrnMap()
-);
-
+  const [queueRows, setQueueRows] = useState([]);
+  const [jobcards, setJobcards] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [statusMessage, setStatusMessage] = useState("");
+  const [storeQueueIds, setStoreQueueIds] = useState(() =>
+    typeof window === "undefined" ? [] : loadStoreQueueIds()
+  );
+  const [grnMap, setGrnMap] = useState(() =>
+    typeof window === "undefined" ? {} : loadGrnMap()
+  );
   const getAuthHeaders = useCallback(() => {
     if (typeof window === "undefined") return {};
     const token = window.localStorage.getItem("token");
     return token ? { Authorization: `Token ${token}` } : {};
-  }, []);
-
-  const showToast = useCallback((message, type = "success") => {
-    setToast({ message, type });
-    if (toastTimer.current) {
-      clearTimeout(toastTimer.current);
-    }
-    toastTimer.current = window.setTimeout(() => {
-      setToast(null);
-    }, 3500);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (toastTimer.current) {
-        clearTimeout(toastTimer.current);
-      }
-    };
   }, []);
 
   useEffect(() => {
@@ -237,54 +216,13 @@ const [grnMap, setGrnMap] = useState(() =>
     }
   };
 
-  const handleNotify = (row) => {
-    showToast(`Jobcard list notified for ${row.service?.rfq_no || "RFQ"}.`);
-  };
-
-  const handleNotifyJobcardlist = (record) => {
-    const fetchGrn = async () => {
-      try {
-        const response = await fetch(buildApiUrl(`/api/jobcards/${record.id}/generate-grn/`), {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...getAuthHeaders(),
-          },
-        });
-        if (!response.ok) {
-          throw new Error("Unable to generate GRN.");
-        }
-        const data = await response.json();
-        const generatedGrn = data.grn_no;
-        setGrnMap((prev) => ({
-          ...prev,
-          [record.id]: {
-            ...prev[record.id],
-            grn_no: generatedGrn,
-            updated_at: new Date().toISOString(),
-          },
-        }));
-        setStoreQueueIds((prev) => prev.filter((id) => id !== record.id));
-        showToast(`Jobcard list notified for ${record.jobcard_no || record.rfq_no || record.id}.`);
-      } catch (error) {
-        showToast(error?.message || "Failed to generate GRN.", "error");
-      }
-    };
-
-    fetchGrn();
+  const openShopfloorExecution = (jobcardId) => {
+    if (!jobcardId) return;
+    router.push(`/sales-services/shopfloorprocessflow/${jobcardId}`);
   };
 
   return (
     <AppPageShell contentClassName="mx-auto w-full max-w-[1240px] px-4 py-4">
-      {toast ? (
-        <div
-          className={`fixed right-5 top-5 z-[100] flex items-center gap-3 rounded-xl px-4 py-2 text-[13px] font-semibold shadow-2xl transition duration-200 ${
-            toast.type === "success" ? "bg-emerald-500 text-white" : "bg-rose-500 text-white"
-          }`}
-        >
-          <span>{toast.message}</span>
-        </div>
-      ) : null}
 
       <div className="rounded-[26px] border border-slate-200 bg-white p-6 shadow-[0_20px_45px_rgba(15,23,42,0.12)]">
         <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -377,10 +315,10 @@ const [grnMap, setGrnMap] = useState(() =>
                           <div className="flex flex-wrap gap-2">
                             <button
                               type="button"
-                              onClick={() => handleNotifyJobcardlist(record)}
+                              onClick={() => openShopfloorExecution(record.id)}
                               className="rounded-[12px] border border-emerald-200 bg-white px-3 py-1 text-[12px] font-semibold text-emerald-600 transition hover:border-emerald-300 hover:bg-emerald-50"
                             >
-                              Notify Jobcardlist
+                              Shopfloor
                             </button>
                           </div>
                         </td>
@@ -422,22 +360,15 @@ const [grnMap, setGrnMap] = useState(() =>
                       <td className="px-3 py-3">{categoryLabel(row)}</td>
                       <td className="px-3 py-3">{statusText}</td>
                       <td className="px-3 py-3">
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleView(row)}
-                            className="rounded-[12px] border border-slate-200 bg-white px-3 py-1 text-[12px] font-semibold text-slate-700 transition hover:border-slate-300"
-                          >
-                            Jobcard
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleNotify(row)}
-                            className="rounded-[12px] border border-emerald-200 bg-white px-3 py-1 text-[12px] font-semibold text-emerald-600 transition hover:border-emerald-300 hover:bg-emerald-50"
-                          >
-                            Notify Jobcardlist
-                          </button>
-                        </div>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleView(row)}
+                              className="rounded-[12px] border border-slate-200 bg-white px-3 py-1 text-[12px] font-semibold text-slate-700 transition hover:border-slate-300"
+                            >
+                              Jobcard
+                            </button>
+                          </div>
                       </td>
                     </tr>
                   );

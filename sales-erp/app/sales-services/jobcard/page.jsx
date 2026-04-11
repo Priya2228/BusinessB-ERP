@@ -139,7 +139,7 @@ export default function JobCardQueuePage() {
   const categoryLabel = (row) => {
     if (row.type === "completion") return "Quote of Completion";
     if (row.type === "assessment") return "Quote of Assessment";
-    return row.service.rfq_category || "Standard";
+    return row.service?.rfq_category || "Standard";
   };
 
   const statusText = (row) => {
@@ -156,7 +156,9 @@ export default function JobCardQueuePage() {
   };
 
   const handleView = (row) => {
-    router.push(`/sales-services/jobcard/create?rfqId=${row.service.id}`);
+    const rfqId = row.service?.id;
+    if (!rfqId) return;
+    router.push(`/sales-services/jobcard/create?rfqId=${rfqId}`);
   };
 
   return (

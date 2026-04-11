@@ -58,6 +58,7 @@ const STORAGE_KEYS = {
   role: "role",
   designation: "designation",
   department: "department",
+  user_id: "user_id",
 };
 
 const ROUTE_RULES = [
@@ -100,10 +101,18 @@ export const getStoredAuthState = () => {
     role: normalizeRole(window.localStorage.getItem(STORAGE_KEYS.role) || ""),
     designation: window.localStorage.getItem(STORAGE_KEYS.designation) || "",
     department: window.localStorage.getItem(STORAGE_KEYS.department) || "",
+    user_id: window.localStorage.getItem(STORAGE_KEYS.user_id) || "",
   };
 };
 
-export const persistAuthState = ({ token, username, role, designation, department }) => {
+export const persistAuthState = ({
+  token,
+  username,
+  role,
+  designation,
+  department,
+  user_id,
+}) => {
   if (typeof window === "undefined") return;
 
   if (token) {
@@ -113,6 +122,11 @@ export const persistAuthState = ({ token, username, role, designation, departmen
   window.localStorage.setItem(STORAGE_KEYS.role, normalizeRole(role));
   window.localStorage.setItem(STORAGE_KEYS.designation, designation || "");
   window.localStorage.setItem(STORAGE_KEYS.department, department || "");
+  if (user_id) {
+    window.localStorage.setItem(STORAGE_KEYS.user_id, user_id);
+  } else {
+    window.localStorage.removeItem(STORAGE_KEYS.user_id);
+  }
 };
 
 /**

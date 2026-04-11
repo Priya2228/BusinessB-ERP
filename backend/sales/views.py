@@ -1,11 +1,15 @@
-from rest_framework.decorators import api_view
-from rest_framework.decorators import authentication_classes, permission_classes
+from collections.abc import Mapping
+
+from django.http import QueryDict
+from django.utils import timezone
+from rest_framework import status
 from rest_framework.authentication import TokenAuthentication
+from rest_framework.decorators import action, api_view, authentication_classes, permission_classes
+from rest_framework.exceptions import ValidationError
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.exceptions import ValidationError
-from django.utils import timezone
+from rest_framework.viewsets import ModelViewSet
 from .models import (
     Dispatchdetails,
     InvoiceItem,
@@ -25,6 +29,8 @@ from .models import (
     MiscellaneousOption,
     JobCard,
     OperationHeadRegistration,
+    ShopfloorExecution,
+    ShopfloorActivityRequest,
 )
 from .serializers import (
     DispatchdetailsSerializer,
@@ -44,6 +50,8 @@ from .serializers import (
     MiscellaneousOptionSerializer,
     JobCardSerializer,
     OperationHeadRegistrationSerializer,
+    ShopfloorExecutionSerializer,
+    ShopfloorActivityRequestSerializer,
 )
 import json
 import re
@@ -789,6 +797,128 @@ def view_invoice(request, dispatch_id):
     }
     
     return render(request, 'invoice.html', context)
+
+
+class ShopfloorExecutionViewSet(ModelViewSet):
+    serializer_class = ShopfloorExecutionSerializer
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+    lookup_field = "jobcard_id"
+    SECTION_PREFIXES = ["inspection", "disassembly", "assessment", "spare_repair", "assembly"]
+
+    REQUIRED_COMPLETION_FIELDS = [
+        "inspection_start_date",
+        "inspection_end_date",
+        "inspection_done_by",
+        "inspection_validated_by",
+        "disassembly_start_date",
+        "disassembly_end_date",
+        "disassembly_done_by",
+        "disassembly_validated_by",
+        "assessment_start_date",
+        "assessment_end_date",
+        "assessment_done_by",
+        "spare_repair_start_date",
+        "spare_repair_end_date",
+        "spare_repair_done_by",
+        "assembly_start_date",
+        "assembly_end_date",
+        "assembly_done_by",
+    ]
+
+    def get_queryset(self):
+        return ShopfloorExecution.objects.select_related(
+            "jobcard", "jobcard__purchase_order"
+        ).prefetch_related("activity_requests")
+
+    def get_object(self):
+        jobcard_id = self.kwargs.get(self.lookup_field)
+        if jobcard_id is None:
+            return super().get_object()
+        execution, _ = ShopfloorExecution.objects.get_or_create(
+            jobcard_id=jobcard_id, defaults={"status": ShopfloorExecution.STATUS_DRAFT}
+        )
+        return execution
+
+    def get_serializer(self, *args, **kwargs):
+        data = kwargs.get("data")
+        if data is not None:
+            kwargs["data"] = self._ensure_done_by(data)
+        return super().get_serializer(*args, **kwargs)
+
+    def _ensure_done_by(self, data):
+        normalized = {}
+        if isinstance(data, QueryDict):
+            for key in data:
+                normalized[key] = data.get(key)
+        elif isinstance(data, Mapping):
+            normalized.update(data)
+        elif data:
+            normalized.update(dict(data))
+        user_id = getattr(self.request.user, "id", None)
+        if not user_id:
+            return normalized
+        for prefix in self.SECTION_PREFIXES:
+            start_key = f"{prefix}_start_date"
+            done_key = f"{prefix}_done_by"
+            if start_key in normalized and not normalized.get(done_key):
+                normalized[done_key] = user_id
+        return normalized
+
+    @action(detail=True, methods=["post"], url_path="complete")
+    def complete(self, request, jobcard_id=None):
+        execution = self.get_object()
+        print("--- Shopfloor completion payload ---")
+        try:
+            payload_snapshot = dict(request.data)
+        except Exception:
+            payload_snapshot = None
+        print("Raw data:", payload_snapshot if payload_snapshot is not None else request.data)
+        print("Existing execution snapshot:", ShopfloorExecutionSerializer(execution).data)
+        print("-------------------------------------")
+        serializer = self.get_serializer(execution, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        execution = serializer.save()
+        missing = self._validate_completion_fields(execution)
+        if missing:
+            return Response(
+                {"detail": "Missing required fields", "fields": missing},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        execution.status = ShopfloorExecution.STATUS_COMPLETED
+        execution.save(update_fields=["status"])
+        jobcard = execution.jobcard
+        jobcard.jobcard_status = "Execution Complete"
+        jobcard.save(update_fields=["jobcard_status"])
+        return Response(self.get_serializer(execution).data)
+
+    def _validate_completion_fields(self, execution):
+        missing = []
+        for field_name in self.REQUIRED_COMPLETION_FIELDS:
+            value = getattr(execution, field_name)
+            if value in (None, ""):
+                missing.append(field_name)
+        return missing
+
+
+class ShopfloorActivityRequestViewSet(ModelViewSet):
+    serializer_class = ShopfloorActivityRequestSerializer
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+    queryset = ShopfloorActivityRequest.objects.select_related(
+        "shopfloor_execution", "created_by"
+    ).all()
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        execution_id = self.request.query_params.get("execution")
+        if execution_id:
+            queryset = queryset.filter(shopfloor_execution_id=execution_id)
+        return queryset
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
 @api_view(['GET', 'POST'])
 def create_item(request):
     # 1. Handle GET: Return the list of items

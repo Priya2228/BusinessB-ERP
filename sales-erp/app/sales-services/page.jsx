@@ -11,6 +11,7 @@ const jobcardOverlayLinks = [
   { title: "Opening Jobcard", href: "/sales-services/jobcard/list" },
   { title: "HOD Queue", href: "/sales-services/hod-queue/list" },
   { title: "Store Queue", href: "/sales-services/store-queue/list" },
+  { title: "Supervisor Queue", href: "/sales-services/supervisor-queue/list" },
 ];
 
 const quickLinks = [
@@ -52,24 +53,6 @@ const quickLinks = [
     icon: ClipboardList,
     href: "/sales-services/operation-head-registration/create",
     roles: [ROLES.ADMIN, ROLES.OPERATION_HEAD],
-  },
-  {
-    title: "Supervisor Queue",
-    icon: ClipboardList,
-    href: "/sales-services/supervisor-queue/list",
-    roles: [ROLES.ADMIN, ROLES.OPERATION_HEAD, ROLES.SITE_ENGINEER],
-  },
-  {
-    title: "HOD Queue",
-    icon: ClipboardList,
-    href: "/sales-services/hod-queue/list",
-    roles: [ROLES.ADMIN, ROLES.DOCUMENT_CONTROLLER, ROLES.OPERATION_HEAD, ROLES.SITE_ENGINEER],
-  },
-  {
-    title: "Store Queue",
-    icon: ClipboardList,
-    href: "/sales-services/store-queue/list",
-    roles: [ROLES.ADMIN, ROLES.DOCUMENT_CONTROLLER, ROLES.OPERATION_HEAD, ROLES.STORE_QUEUE],
   },
 ];
 

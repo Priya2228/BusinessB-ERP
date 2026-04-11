@@ -1,5 +1,12 @@
+from rest_framework.routers import DefaultRouter
 from django.urls import path
 from .views import *
+
+router = DefaultRouter()
+router.register(r"shopfloor", ShopfloorExecutionViewSet, basename="shopfloor")
+router.register(
+    r"shopfloor-requests", ShopfloorActivityRequestViewSet, basename="shopfloor-requests"
+)
 
 urlpatterns = [
     # 1. This is the main one. We point 'dispatch-details/' to 'dispatch_list_create' 
@@ -40,3 +47,5 @@ urlpatterns = [
     path('cost-estimations/<int:pk>/approval/', cost_estimation_approval_update, name='cost_estimation_approval_update'),
     path('cost-estimation-options/', cost_estimation_option_catalog, name='cost_estimation_option_catalog'),
 ]
+
+urlpatterns += router.urls

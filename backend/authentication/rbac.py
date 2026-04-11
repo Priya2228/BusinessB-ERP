@@ -91,6 +91,7 @@ def build_auth_payload(user):
         default_designation = "Managing Director"
 
     return {
+        "user_id": user.id,
         "username": user.username,
         "role": role,
         "designation": profile.designation or default_designation,

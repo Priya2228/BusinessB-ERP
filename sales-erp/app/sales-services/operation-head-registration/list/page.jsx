@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BellRing, Pencil, Plus, Trash2 } from "lucide-react";
+import { BellRing, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import AppPageShell from "../../../components/AppPageShell";
 import { buildApiUrl } from "../../../utils/api";
@@ -45,23 +45,6 @@ export default function OperationHeadRegistrationListPage() {
   useEffect(() => {
     loadRecords();
   }, [loadRecords]);
-
-  const handleDelete = async (recordId) => {
-    if (!window.confirm("Delete this registration?")) return;
-    try {
-      const response = await fetch(buildApiUrl(`/api/operation-head-registrations/${recordId}/`), {
-        method: "DELETE",
-        headers: getAuthHeaders(),
-      });
-      if (!response.ok) {
-        throw new Error("Delete failed.");
-      }
-      setRecords((prev) => prev.filter((record) => record.id !== recordId));
-      showToast("Registration deleted.");
-    } catch (error) {
-      showToast(error?.message || "Could not delete.", "error");
-    }
-  };
 
   const handleNotifySupervisor = async (recordId) => {
     try {
@@ -167,26 +150,6 @@ export default function OperationHeadRegistrationListPage() {
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            router.push(
-                              `/sales-services/operation-head-registration/create?id=${record.id}`
-                            )
-                          }
-                          className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white transition hover:border-slate-300"
-                          title="Edit registration"
-                        >
-                          <Pencil size={16} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(record.id)}
-                          className="flex h-8 w-8 items-center justify-center rounded-full border border-rose-200 bg-white text-rose-600 transition hover:border-rose-300"
-                          title="Delete registration"
-                        >
-                          <Trash2 size={16} />
-                        </button>
                         <button
                           type="button"
                           onClick={() => handleNotifySupervisor(record.id)}

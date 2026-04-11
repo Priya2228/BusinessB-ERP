@@ -13,7 +13,12 @@ const actionButtonClassName =
   "flex h-7 w-7 items-center justify-center rounded-md border text-[12px] transition";
 
 function formatDate(value) {
-  return value || "-";
+  if (!value) return "-";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+  return parsed.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
 export default function RfqListPage() {
@@ -160,10 +165,11 @@ export default function RfqListPage() {
                         <thead className="bg-[#f5f9ff] text-slate-600">
                           <tr>
                             <th className="border-b border-slate-200 px-4 py-3 font-semibold">RFQ Reference</th>
+                            <th className="border-b border-slate-200 px-4 py-3 font-semibold">RFQ Date</th>
                             <th className="border-b border-slate-200 px-4 py-3 font-semibold">RFQ Information</th>
                             <th className="border-b border-slate-200 px-4 py-3 font-semibold">RFQ Scope</th>
                             <th className="border-b border-slate-200 px-4 py-3 font-semibold">Planning</th>
-                              <th className="border-b border-slate-200 px-4 py-3 font-semibold">Category</th>
+                            <th className="border-b border-slate-200 px-4 py-3 font-semibold">Category</th>
                             <th className="border-b border-slate-200 px-4 py-3 font-semibold">Actions</th>
                           </tr>
                         </thead>
@@ -175,15 +181,16 @@ export default function RfqListPage() {
                             const mdStageLabel = getStageLabel(approvalRecord.md.status, "WAITING");
                             const isLocked = isFullyApproved(approvalRecord);
                             const canManageRow = canManageRfq(authRole);
-                            const isCompletion = (row.rfq_category || "").toLowerCase() === "quote of completion";
+                            const currentCategory = (row.rfq_category || "Standard").trim();
+                            const isCompletion = currentCategory.toLowerCase() === "quote of completion";
+                            const categoryLabel = currentCategory;
 
                             return (
                             <tr key={row.id} className="align-top">
                               <td className="border-b border-slate-100 px-4 py-3">
                                 <p className="font-semibold text-slate-900">{row.rfq_no || "-"}</p>
-                                <p className="mt-1">RFQ Date: {formatDate(row.registered_date)}</p>
-                                
                               </td>
+                              <td className="border-b border-slate-100 px-4 py-3">{formatDate(row.registered_date)}</td>
                               <td className="border-b border-slate-100 px-4 py-3">
                                 <p className="font-semibold text-slate-900">Mode: {row.enquiry_mode || (row.email ? "Email" : row.phone_no ? "Phone" : "Verbal")}</p>
                                 <p className="mt-1">Contact: {row.email || row.phone_no || "-"}</p>
@@ -221,7 +228,7 @@ export default function RfqListPage() {
                                     onClick={() => handleCompletionRequest(row)}
                                     disabled={completionSendingId === row.id}
                                     className="mt-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-600 shadow-sm transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400">
-                                    {completionSendingId === row.id ? "Sending..." : "Quote of Assessment"}
+                                    {completionSendingId === row.id ? "Sending..." : categoryLabel}
                                   </button>
                                 )}
                               </td>

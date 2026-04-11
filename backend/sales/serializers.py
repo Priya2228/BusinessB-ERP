@@ -5,6 +5,7 @@ import re
 import secrets
 from datetime import datetime
 from django.contrib.auth import get_user_model
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
 from inventory.services import get_tax_details, get_tax_rate, normalize_region
@@ -30,6 +31,8 @@ from .models import (
     MiscellaneousOption,
     JobCard,
     OperationHeadRegistration,
+    ShopfloorExecution,
+    ShopfloorActivityRequest,
 )
 from .completion_utils import ensure_completion_cost_estimation
 
@@ -138,6 +141,39 @@ class FlexibleDateField(serializers.DateField):
             return stripped
 
         return value
+
+class UserReferenceField(serializers.PrimaryKeyRelatedField):
+    default_error_messages = {
+        "user_not_found": "Unable to find a user matching '{value}'."
+    }
+
+    def to_internal_value(self, data):
+        if data in (None, ""):
+            return None
+        if isinstance(data, str):
+            stripped = data.strip()
+            if not stripped:
+                return None
+            if stripped.isdigit():
+                data = int(stripped)
+            else:
+                user = self._lookup_user(stripped)
+                if user:
+                    return user
+                self.fail("user_not_found", value=data)
+        return super().to_internal_value(data)
+
+    def _lookup_user(self, value):
+        name_parts = value.split()
+        filters = (
+            Q(username__iexact=value)
+            | Q(email__iexact=value)
+            | Q(first_name__iexact=value)
+            | Q(last_name__iexact=value)
+        )
+        if len(name_parts) >= 2:
+            filters |= Q(first_name__iexact=name_parts[0], last_name__iexact=name_parts[-1])
+        return User.objects.filter(filters).first()
 
 class InvoiceItemSerializer(serializers.ModelSerializer):
     region = serializers.CharField(write_only=True, required=False, allow_blank=True)
@@ -574,9 +610,9 @@ class OperationHeadRegistrationSerializer(serializers.ModelSerializer):
         source="jobcard",
         allow_null=True,
         required=False,
-        write_only=True,
     )
     jobcard_info = serializers.SerializerMethodField()
+    purchase_order_info = serializers.SerializerMethodField()
     shopfloor_incharge_id = serializers.PrimaryKeyRelatedField(
         queryset=User.objects.all(),
         source="shopfloor_incharge",
@@ -584,7 +620,7 @@ class OperationHeadRegistrationSerializer(serializers.ModelSerializer):
         required=False,
         write_only=True,
     )
-    shopfloor_incharge_info = serializers.SerializerMethodField()
+    shopfloor_incharge_info = serializers.SerializerMethodField(method_name="resolve_shopfloor_incharge_info")
     operation_date = FlexibleDateField(required=False, allow_null=True)
     rfq_date = FlexibleDateField(required=False, allow_null=True)
     cost_estimation_date = FlexibleDateField(required=False, allow_null=True)
@@ -635,7 +671,7 @@ class OperationHeadRegistrationSerializer(serializers.ModelSerializer):
             "rfq_no": jobcard.rfq_no,
         }
 
-    def get_shopfloor_incharge_info(self, obj):
+    def resolve_shopfloor_incharge_info(self, obj):
         staff = obj.shopfloor_incharge
         if not staff:
             return None
@@ -645,4 +681,169 @@ class OperationHeadRegistrationSerializer(serializers.ModelSerializer):
             "username": staff.username,
             "full_name": staff.get_full_name(),
             "designation": profile.designation if profile else "",
+        }
+
+    def get_purchase_order_info(self, obj):
+        jobcard = obj.jobcard
+        po = jobcard.purchase_order if jobcard else None
+        if not po:
+            return None
+        return {
+            "id": po.id,
+            "po_no": po.po_no,
+            "po_date": po.po_date,
+            "rfq_no": po.rfq_no,
+            "quotation_no": po.quotation_no,
+        }
+
+
+class ShopfloorActivityRequestSerializer(serializers.ModelSerializer):
+    created_by_info = serializers.SerializerMethodField()
+    shopfloor_execution_id = serializers.PrimaryKeyRelatedField(
+        queryset=ShopfloorExecution.objects.all(),
+        source="shopfloor_execution",
+        write_only=True,
+    )
+
+    class Meta:
+        model = ShopfloorActivityRequest
+        fields = "__all__"
+        read_only_fields = ["created_at", "updated_at", "created_by_info"]
+
+    def get_created_by_info(self, obj):
+        user = obj.created_by
+        if not user:
+            return None
+        return {"id": user.id, "username": user.username, "full_name": user.get_full_name()}
+
+
+class ShopfloorExecutionSerializer(serializers.ModelSerializer):
+    jobcard_id = serializers.PrimaryKeyRelatedField(
+        queryset=JobCard.objects.all(),
+        source="jobcard",
+        required=False,
+        allow_null=True,
+    )
+    jobcard_info = serializers.SerializerMethodField()
+    activity_requests = ShopfloorActivityRequestSerializer(many=True, read_only=True)
+    inspection_done_by = UserReferenceField(
+        queryset=User.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+    inspection_validated_by = UserReferenceField(
+        queryset=User.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+    disassembly_done_by = UserReferenceField(
+        queryset=User.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+    disassembly_validated_by = UserReferenceField(
+        queryset=User.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+    assessment_done_by = UserReferenceField(
+        queryset=User.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+    assessment_validated_by_qc = UserReferenceField(
+        queryset=User.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+    assessment_validated_by_hod = UserReferenceField(
+        queryset=User.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+    assessment_approved_by_hod = UserReferenceField(
+        queryset=User.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+    spare_repair_done_by = UserReferenceField(
+        queryset=User.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+    spare_repair_validated_by_qc = UserReferenceField(
+        queryset=User.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+    assembly_done_by = UserReferenceField(
+        queryset=User.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+    assembly_validated_by_qc = UserReferenceField(
+        queryset=User.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+    assembly_validated_by_hod = UserReferenceField(
+        queryset=User.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+    assembly_approved_by_hod = UserReferenceField(
+        queryset=User.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+    inspection_start_date = FlexibleDateField(required=False, allow_null=True)
+    inspection_end_date = FlexibleDateField(required=False, allow_null=True)
+    disassembly_start_date = FlexibleDateField(required=False, allow_null=True)
+    disassembly_end_date = FlexibleDateField(required=False, allow_null=True)
+    assessment_start_date = FlexibleDateField(required=False, allow_null=True)
+    assessment_end_date = FlexibleDateField(required=False, allow_null=True)
+    spare_repair_start_date = FlexibleDateField(required=False, allow_null=True)
+    spare_repair_end_date = FlexibleDateField(required=False, allow_null=True)
+    assembly_start_date = FlexibleDateField(required=False, allow_null=True)
+    assembly_end_date = FlexibleDateField(required=False, allow_null=True)
+
+    class Meta:
+        model = ShopfloorExecution
+        fields = "__all__"
+        read_only_fields = ["created_at", "updated_at", "jobcard_info", "activity_requests"]
+
+    def get_jobcard_info(self, obj):
+        jobcard = obj.jobcard
+        if not jobcard:
+            return None
+        sales_request = (
+            SalesServiceRequest.objects.filter(rfq_no=jobcard.rfq_no).first()
+            if jobcard.rfq_no
+            else None
+        )
+        po = jobcard.purchase_order
+        po_info = None
+        if po:
+            po_info = {
+                "id": po.id,
+                "po_no": po.po_no,
+                "po_date": po.po_date,
+                "rfq_no": po.rfq_no,
+                "quotation_no": po.quotation_no,
+            }
+        return {
+            "jobcard_no": jobcard.jobcard_no,
+            "jobcard_date": jobcard.jobcard_date,
+            "jobcard_status": jobcard.jobcard_status,
+            "rfq_no": jobcard.rfq_no,
+            "rfq_type": jobcard.rfq_type,
+            "rfq_category": jobcard.rfq_category,
+            "client_name": jobcard.client_name or (sales_request.client_name if sales_request else None),
+            "company_name": jobcard.company_name or (sales_request.company_name if sales_request else None),
+            "attention": jobcard.attention or (sales_request.attention if sales_request else None),
+            "purchase_order": po_info,
+            "rfq_date": sales_request.registered_date if sales_request else None,
+            "scope_type": jobcard.scope_type,
+            "scope_description": jobcard.scope_description,
+            "scope_remarks": jobcard.scope_remarks,
         }
