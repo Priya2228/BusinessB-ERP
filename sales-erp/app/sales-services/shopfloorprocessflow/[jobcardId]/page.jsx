@@ -56,6 +56,14 @@ const SECTION_DEFINITIONS = [
     fileFields: [{ name: "assessment_opening_report", label: "Opening Report" }],
   },
   {
+    key: "notification",
+    title: "Notification to Sales & Executive",
+    fields: [],
+    textAreas: [{ name: "notify_note", label: "Notification to Sales & Executive", rows: 3 }],
+    fileFields: [],
+    activity: false,
+  },
+  {
     key: "spare_repair",
     title: "Spare & Repair",
     fields: [
@@ -143,6 +151,41 @@ const ACTIVITY_BUTTON_TITLES = {
   assembly: "QC Check",
 };
 
+const ACTIVITY_HIGHLIGHT_STYLES = {
+  inspection: {
+    gradient: "from-blue-50 to-white",
+    border: "border-blue-200",
+    text: "text-blue-700",
+    ring: "ring-blue-200",
+  },
+  disassembly: {
+    gradient: "from-emerald-50 to-white",
+    border: "border-emerald-200",
+    text: "text-emerald-700",
+    ring: "ring-emerald-200",
+  },
+  assessment: {
+    gradient: "from-amber-50 to-white",
+    border: "border-amber-200",
+    text: "text-amber-700",
+    ring: "ring-amber-200",
+  },
+  spare_repair: {
+    gradient: "from-lime-50 to-white",
+    border: "border-lime-200",
+    text: "text-lime-700",
+    ring: "ring-lime-200",
+  },
+  assembly: {
+    gradient: "from-purple-50 to-white",
+    border: "border-purple-200",
+    text: "text-purple-700",
+    ring: "ring-purple-200",
+  },
+};
+
+const ACTIVITY_SECTIONS = SECTION_DEFINITIONS.filter((section) => section.activity !== false);
+
 const getAuthHeaders = () => {
   if (typeof window === "undefined") return {};
   const token = window.localStorage.getItem("token");
@@ -159,6 +202,7 @@ export default function ShopfloorProcessFlowDetail({ params }) {
   const [formState, setFormState] = useState({});
   const [fileState, setFileState] = useState({});
   const [displayOverrides, setDisplayOverrides] = useState({});
+  const [savedSections, setSavedSections] = useState({});
   const [sectionSaving, setSectionSaving] = useState({});
   const [completionLoading, setCompletionLoading] = useState(false);
   const [activityForm, setActivityForm] = useState({
@@ -258,6 +302,29 @@ export default function ShopfloorProcessFlowDetail({ params }) {
     return payload;
   };
 
+  const buildSectionPayload = (section) => {
+    const payload = {};
+    const addValue = (name) => {
+      const value = getFormFieldValue(name);
+      if (value !== undefined) {
+        payload[name] = value;
+      }
+    };
+    section.fields?.forEach(({ name }) => addValue(name));
+    section.textAreas?.forEach(({ name }) => addValue(name));
+    return payload;
+  };
+
+  const buildSectionFiles = (section) => {
+    const payload = {};
+    section.fileFields?.forEach((fileField) => {
+      if (fileState[fileField.name]) {
+        payload[fileField.name] = fileState[fileField.name];
+      }
+    });
+    return payload;
+  };
+
   const loadExecution = useCallback(async () => {
     if (!jobcardId) {
       setError("Jobcard ID is missing.");
@@ -276,6 +343,7 @@ export default function ShopfloorProcessFlowDetail({ params }) {
       setExecution(data);
       setFormState((prev) => ({ ...prev, ...data }));
       setDisplayOverrides({});
+      setSavedSections(deriveSavedSections(data));
     } catch (err) {
       setError(err?.message || "Unable to load execution.");
     } finally {
@@ -361,6 +429,7 @@ export default function ShopfloorProcessFlowDetail({ params }) {
     const updated = await patchExecution(payload, files);
     setExecution(updated);
     setFormState((prev) => ({ ...prev, ...updated }));
+    setSavedSections(deriveSavedSections(updated));
     return updated;
   };
 
@@ -369,25 +438,12 @@ export default function ShopfloorProcessFlowDetail({ params }) {
     if (!section) return;
     setSectionSaving((prev) => ({ ...prev, [sectionKey]: true }));
     try {
-        const payload = {};
-        section.fields.forEach((field) => {
-          const value = getFormFieldValue(field.name);
-          if (value === undefined) {
-            return;
-          }
-          payload[field.name] = value;
-        });
-      const files = {};
-      if (section.fileFields?.length) {
-        section.fileFields.forEach((fileField) => {
-          if (fileState[fileField.name]) {
-            files[fileField.name] = fileState[fileField.name];
-          }
-        });
-      }
+      const payload = buildSectionPayload(section);
+      const files = buildSectionFiles(section);
       const updated = await patchExecution(payload, files);
       setExecution(updated);
       setFormState((prev) => ({ ...prev, ...updated }));
+      setSavedSections(deriveSavedSections(updated));
       toast.success(`${section.title} saved.`);
     } catch (err) {
       toast.error(err?.message || "Unable to save section.");
@@ -528,7 +584,7 @@ const [missingFields, setMissingFields] = useState([]);
   };
 
   const activityFlow = useMemo(() => {
-    return SECTION_DEFINITIONS.map((section) => {
+    return ACTIVITY_SECTIONS.map((section) => {
       const startValue = formState[`${section.key}_start_date`];
       const endValue = formState[`${section.key}_end_date`];
       const hasProgress =
@@ -546,7 +602,7 @@ const [missingFields, setMissingFields] = useState([]);
   }, [formState]);
 
   const activityButtons = useMemo(() => {
-    return SECTION_DEFINITIONS.map((section) => {
+    return ACTIVITY_SECTIONS.map((section) => {
       const flowItem = activityFlow.find((item) => item.key === section.key);
       return {
         key: section.key,
@@ -555,6 +611,31 @@ const [missingFields, setMissingFields] = useState([]);
       };
     });
   }, [activityFlow]);
+
+  const isSectionFilled = (section) => {
+    return section.fields.some((field) => {
+      const value = formState[field.name];
+      return value !== undefined && value !== null && value !== "";
+    });
+  };
+
+  const deriveSavedSections = (incoming) => {
+    if (!incoming) return {};
+    const next = {};
+    ACTIVITY_SECTIONS.forEach((section) => {
+      const hasFieldValue =
+        section.fields?.some((field) => {
+          const value = incoming[field.name];
+          return value !== undefined && value !== null && value !== "";
+        }) ||
+        section.textAreas?.some((area) => {
+          const value = incoming[area.name];
+          return value !== undefined && value !== null && value !== "";
+        });
+      next[section.key] = Boolean(hasFieldValue);
+    });
+    return next;
+  };
   
   const jobcardInfo = execution?.jobcard_info || {};
   const detailSections = useMemo(() => {
@@ -666,17 +747,23 @@ const [missingFields, setMissingFields] = useState([]);
             <h2 className="text-[16px] font-semibold text-slate-900">Activity Details</h2>
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {activityButtons.map((button) => (
-              <button
-                key={button.key}
-                type="button"
-                className={`rounded-[15px] border border-slate-200 bg-gradient-to-b from-[#f8fafc] to-white px-4 py-3 text-[14px] font-semibold text-slate-700 transition hover:border-slate-300 ${
-                  button.hasProgress ? "ring-2 ring-emerald-200" : ""
-                }`}
-              >
-                {button.title}
-              </button>
-            ))}
+            {activityButtons.map((button) => {
+              const saved = Boolean(savedSections[button.key]);
+              const highlight = saved ? ACTIVITY_HIGHLIGHT_STYLES[button.key] : null;
+              const highlightClasses = highlight
+                ? `${highlight.border} bg-gradient-to-b ${highlight.gradient} ${highlight.text} ring-2 ${highlight.ring}`
+                : "";
+              const progressClasses = !highlight && button.hasProgress ? "ring-2 ring-slate-200" : "";
+              return (
+                <button
+                  key={button.key}
+                  type="button"
+                  className={`rounded-[15px] border border-slate-200 bg-gradient-to-b from-[#f8fafc] to-white px-4 py-3 text-[14px] font-semibold text-slate-700 transition hover:border-slate-300 ${progressClasses} ${highlightClasses}`}
+                >
+                  {button.title}
+                </button>
+              );
+            })}
           </div>
         </section>
 
@@ -697,6 +784,7 @@ const [missingFields, setMissingFields] = useState([]);
           </div>
         </section>
 
+      
 
         {SECTION_DEFINITIONS.map((section) => (
           <section key={section.key} className="rounded-[20px] border border-slate-200 bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.05)] space-y-4">
@@ -750,21 +838,6 @@ const [missingFields, setMissingFields] = useState([]);
             {section.fileFields?.length ? (
               <div className="grid gap-3 sm:grid-cols-2">
                 {section.fileFields.map((fileField) => renderFilePicker(fileField, section.key))}
-              </div>
-            ) : null}
-            {section.key === "assessment" ? (
-              <div className="grid gap-3">
-                <label className="text-[13px] text-slate-700">
-                  <span className="text-[12px] font-semibold text-slate-500">
-                    Notification to Sales & Executive
-                  </span>
-                  <textarea
-                    rows={3}
-                    value={formState.notify_note || ""}
-                    onChange={(event) => handleInputChange("notify_note", event.target.value)}
-                    className="mt-1 w-full rounded-[10px] border border-slate-200 px-3 py-2 text-[13px] text-slate-700 outline-none focus:border-sky-400"
-                  />
-                </label>
               </div>
             ) : null}
           </section>

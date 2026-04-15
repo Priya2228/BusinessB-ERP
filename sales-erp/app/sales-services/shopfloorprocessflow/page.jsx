@@ -71,7 +71,7 @@ export default function ShopfloorProcessFlowListPage() {
       <div className="rounded-[26px] border border-slate-200 bg-white p-6 shadow-[0_20px_45px_rgba(15,23,42,0.12)]">
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-[22px] font-bold text-slate-900">Shopfloor Process Flow</h1>
+            <h1 className="text-[22px] font-bold text-slate-900">Shopfloor Process Flow List</h1>
             
           </div>
         </div>

@@ -175,6 +175,31 @@ class UserReferenceField(serializers.PrimaryKeyRelatedField):
             filters |= Q(first_name__iexact=name_parts[0], last_name__iexact=name_parts[-1])
         return User.objects.filter(filters).first()
 
+class DisplayChoiceField(serializers.ChoiceField):
+    def __init__(self, choices, **kwargs):
+        super().__init__(choices=choices, **kwargs)
+        self._display_to_value = {}
+        for key, label in self.choices.items():
+            if isinstance(label, (list, tuple)):
+                for sub_key, sub_label in label:
+                    self._display_to_value[sub_label] = sub_key
+                    if isinstance(sub_label, str):
+                        self._display_to_value[sub_label.lower()] = sub_key
+            else:
+                self._display_to_value[label] = key
+                if isinstance(label, str):
+                    self._display_to_value[label.lower()] = key
+
+    def to_internal_value(self, data):
+        if isinstance(data, str):
+            normalized = data.strip()
+            mapped = self._display_to_value.get(normalized)
+            if mapped is None:
+                mapped = self._display_to_value.get(normalized.lower())
+            if mapped is not None:
+                data = mapped
+        return super().to_internal_value(data)
+
 class InvoiceItemSerializer(serializers.ModelSerializer):
     region = serializers.CharField(write_only=True, required=False, allow_blank=True)
     item_category = serializers.CharField(write_only=True, required=False, allow_blank=True)
@@ -806,6 +831,10 @@ class ShopfloorExecutionSerializer(serializers.ModelSerializer):
     spare_repair_end_date = FlexibleDateField(required=False, allow_null=True)
     assembly_start_date = FlexibleDateField(required=False, allow_null=True)
     assembly_end_date = FlexibleDateField(required=False, allow_null=True)
+    status = DisplayChoiceField(
+        choices=ShopfloorExecution.STATUS_CHOICES,
+        required=False,
+    )
 
     class Meta:
         model = ShopfloorExecution

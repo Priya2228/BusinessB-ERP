@@ -45,7 +45,13 @@ const quickLinks = [
     title: "Jobcard",
     icon: ClipboardList,
     href: "/sales-services/jobcard",
-    roles: [ROLES.ADMIN, ROLES.DOCUMENT_CONTROLLER, ROLES.OPERATION_HEAD],
+    roles: [
+      ROLES.ADMIN,
+      ROLES.DOCUMENT_CONTROLLER,
+      ROLES.OPERATION_HEAD,
+      ROLES.SITE_ENGINEER,
+      ROLES.STORE_QUEUE,
+    ],
     type: "jobcard",
   },
   {
